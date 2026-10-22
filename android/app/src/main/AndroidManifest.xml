@@ -3,7 +3,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <application android:label="medi-tracker">
+    <application
+        android:icon="@mipmap/ic_launcher"
+        android:label="medi-tracker">
         <activity
             android:name=".MainActivity"
             android:exported="true">

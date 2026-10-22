@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Logo MedTracker (budzik z kapsułką), źródło: design/logo.svg -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="54"
+        android:pivotY="56"
+        android:scaleX="0.8"
+        android:scaleY="0.8"
+        android:translateY="-2">
+        <!-- dzwoneczki -->
+        <path
+            android:fillColor="#D5EDE4"
+            android:pathData="M28,35a8,8 0,1 0,16 0a8,8 0,1 0,-16 0zM64,35a8,8 0,1 0,16 0a8,8 0,1 0,-16 0z" />
+        <!-- nóżki -->
+        <path
+            android:pathData="M40,80l-4,5M68,80l4,5"
+            android:strokeColor="#D5EDE4"
+            android:strokeLineCap="round"
+            android:strokeWidth="4" />
+        <!-- odstęp w kolorze tła wokół tarczy -->
+        <path
+            android:fillColor="#176B5B"
+            android:pathData="M27,58a27,27 0,1 0,54 0a27,27 0,1 0,-54 0z" />
+        <!-- tarcza -->
+        <path
+            android:fillColor="#D5EDE4"
+            android:pathData="M30,58a24,24 0,1 0,48 0a24,24 0,1 0,-48 0z" />
+        <!-- kreski godzin: 12, 3, 6, 9 -->
+        <path
+            android:fillColor="#176B5B"
+            android:pathData="M53,37h2v4.3h-2zM53,74.7h2v4.3h-2zM33,57h4.3v2h-4.3zM70.7,57h4.3v2h-4.3z" />
+        <!-- kapsułka jako wskazówki -->
+        <group
+            android:pivotX="54"
+            android:pivotY="58"
+            android:rotation="-45">
+            <path
+                android:fillColor="#176B5B"
+                android:pathData="M53.4,52.3H44.7a5.7,5.7 0,0 0,0 11.4h8.7z" />
+            <path
+                android:fillColor="#123D33"
+                android:pathData="M54.6,52.3h8.7a5.7,5.7 0,0 1,0 11.4h-8.7z" />
+        </group>
+    </group>
+</vector>

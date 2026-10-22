@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="512" height="512">
+  <!-- MedTracker: budzik z kapsułką jako wskazówkami (wariant 23 z design/logo-options.html).
+       Kolory z design systemu w Figmie: primary #176B5B, primaryContainer #D5EDE4, onPrimaryContainer #123D33.
+       Siatka 108×108 jak adaptacyjna ikona Androida, treść w strefie bezpiecznej (koło r=33).
+       Wersja na Androida: android/app/src/main/res/drawable/ic_launcher_foreground.xml -->
+  <rect width="108" height="108" fill="#176B5B"/>
+  <g transform="translate(54 54) scale(0.8) translate(-54 -56)">
+    <circle cx="36" cy="35" r="8" fill="#D5EDE4"/>
+    <circle cx="72" cy="35" r="8" fill="#D5EDE4"/>
+    <path d="M40 80l-4 5M68 80l4 5" stroke="#D5EDE4" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="54" cy="58" r="27" fill="#176B5B"/>
+    <circle cx="54" cy="58" r="24" fill="#D5EDE4"/>
+    <g fill="#176B5B">
+      <rect x="53" y="37" width="2" height="4.3" rx="1"/>
+      <rect x="53" y="37" width="2" height="4.3" rx="1" transform="rotate(90 54 58)"/>
+      <rect x="53" y="37" width="2" height="4.3" rx="1" transform="rotate(180 54 58)"/>
+      <rect x="53" y="37" width="2" height="4.3" rx="1" transform="rotate(270 54 58)"/>
+    </g>
+    <g transform="rotate(-45 54 58)">
+      <path d="M53.4 52.3H44.7a5.7 5.7 0 0 0 0 11.4h8.7z" fill="#176B5B"/>
+      <path d="M54.6 52.3h8.7a5.7 5.7 0 0 1 0 11.4h-8.7z" fill="#123D33"/>
+    </g>
+  </g>
+</svg>
