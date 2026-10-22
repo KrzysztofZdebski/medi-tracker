@@ -1,0 +1,42 @@
+name: Katalog leków
+
+on:
+  schedule:
+    - cron: '17 5 * * *'   # codziennie ok. 6:17/7:17 czasu PL; RPL aktualizuje eksport w nocy
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths: ['catalog/**', '.github/workflows/catalog.yml']
+
+permissions:
+  contents: write   # publikacja assetów w release
+
+concurrency: catalog
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test
+        run: python3 catalog/test_build.py
+
+      - name: Pobierz RPL
+        run: >
+          curl -fsSL --retry 5 --retry-delay 30 --max-time 600 -o overall.xml
+          https://rejestry.ezdrowie.gov.pl/api/rpl/medicinal-products/public-pl-report/6.0.0/overall.xml
+
+      - name: Zbuduj katalog
+        run: python3 catalog/build.py overall.xml out
+
+      - name: Opublikuj
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view katalog >/dev/null 2>&1 || gh release create katalog \
+            --title "Katalog leków" --latest=false \
+            --notes "Codziennie budowany katalog leków z Rejestru Produktów Leczniczych (CC BY 4.0). Opis: docs/catalog.md"
+          # najpierw baza, potem version.json: klient nigdy nie zobaczy nowej wersji wskazującej na stary plik
+          gh release upload katalog out/leki.sqlite.gz --clobber
+          gh release upload katalog out/version.json --clobber

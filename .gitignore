@@ -1,0 +1,6 @@
+__pycache__/
+out/
+overall.xml
+.gradle/
+build/
+local.properties
