@@ -66,9 +66,15 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
     }
 }
 
-private fun NavHostController.openTab(tab: String) = navigate(if (tab == "medications") "medications?added=false" else tab) {
-    popUpTo("today")
-    launchSingleTop = true
+private fun NavHostController.openTab(tab: String) {
+    if (tab == "today") {
+        popBackStack("today", inclusive = false)
+        return
+    }
+    navigate(if (tab == "medications") "medications?added=false" else tab) {
+        popUpTo("today")
+        launchSingleTop = true
+    }
 }
 
 @Composable
