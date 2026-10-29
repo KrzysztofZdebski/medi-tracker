@@ -30,7 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import pl.agh.meditracker.model.DoseStatus
@@ -169,7 +168,7 @@ fun IconBadge(
     Box(
         modifier = modifier
             .size(size)
-            .clip(MaterialTheme.shapes.small)
+            .clip(if (size >= 72.dp) MaterialTheme.shapes.large else MaterialTheme.shapes.small)
             .background(containerColor),
         contentAlignment = Alignment.Center,
     ) {
@@ -187,19 +186,13 @@ fun EmptyState(
     onAction: () -> Unit = {},
 ) {
     Column(
-        modifier = modifier.fillMaxWidth().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier.fillMaxWidth().padding(vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        IconBadge(icon, size = 72.dp)
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-            Text(
-                message,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
+        IconBadge(icon, size = 88.dp)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.headlineMedium)
+            Text(message, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (actionText != null) PrimaryButton(actionText, onAction, Modifier.padding(top = 8.dp))
     }
