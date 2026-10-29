@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -57,6 +58,7 @@ fun TodayScreen(onAddMedication: () -> Unit, onOpenHistory: () -> Unit) {
         topBar = { AppTopBar("Dzisiaj", actions = { NotificationsAction {} }) },
         snackbarHost = { AppSnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0),
     ) { padding ->
         TodayContent(
             state = state,
