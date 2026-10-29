@@ -67,9 +67,8 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
 }
 
 private fun NavHostController.openTab(tab: String) = navigate(if (tab == "medications") "medications?added=false" else tab) {
-    popUpTo("today") { saveState = true }
+    popUpTo("today")
     launchSingleTop = true
-    restoreState = true
 }
 
 @Composable
