@@ -41,7 +41,7 @@ fun AddMedicationScreen(onClose: () -> Unit, onSaved: () -> Unit, medicationId: 
 @Composable
 fun AddMedicationContent(state: AddMedicationUiState, viewModel: AddMedicationViewModel) {
     BackHandler(enabled = state.exit == null) { viewModel.back() }
-    if (state.step in setOf(Step.Scanner, Step.Ean, Step.Recognizing, Step.NotFound, Step.LookupError)) {
+    if (state.step in setOf(Step.Ean, Step.Recognizing, Step.NotFound, Step.LookupError)) {
         ScannerFlow(state, viewModel)
         return
     }

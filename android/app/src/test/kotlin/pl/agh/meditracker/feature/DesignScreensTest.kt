@@ -109,14 +109,6 @@ class DesignScreensTest {
         screenshot("scanner-recognizing")
     }
 
-    @Test fun scannerPermissionOffersManualAlternative() {
-        val model = AddMedicationViewModel(MedicationRepository(), CatalogRepository(File("build/test-catalog")))
-        compose.setContent { MediTrackerTheme { Surface { ScannerFlow(AddMedicationUiState(step = Step.Scanner), model) } } }
-        compose.onNodeWithText("Zezwól na użycie aparatu").assertIsDisplayed()
-        compose.onNodeWithText("Dodaj ręcznie").assertIsDisplayed()
-        screenshot("scanner-permission")
-    }
-
     @Test fun scheduleEditSavesWithoutAddingAnotherMedication() {
         val repository = MedicationRepository()
         val saved = repository.add(medication)

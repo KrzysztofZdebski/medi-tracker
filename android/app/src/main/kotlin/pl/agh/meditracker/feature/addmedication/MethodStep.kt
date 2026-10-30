@@ -13,7 +13,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import pl.agh.meditracker.feature.scanner.scanBarcode
 import pl.agh.meditracker.ui.components.IconBadge
 import pl.agh.meditracker.ui.components.PrimaryButton
 import pl.agh.meditracker.ui.components.SecondaryButton
@@ -21,6 +23,7 @@ import pl.agh.meditracker.ui.components.SecondaryButton
 @Composable
 fun MethodStep(viewModel: AddMedicationViewModel) {
     val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
     StepColumn {
         Caption("Wybierz sposób dodania leku")
         IconBadge(Icons.Outlined.QrCodeScanner, size = 88.dp, modifier = Modifier.padding(top = 8.dp))
@@ -38,7 +41,7 @@ fun MethodStep(viewModel: AddMedicationViewModel) {
                 Text("Sprawdź dane przed zapisaniem.", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
             }
         }
-        PrimaryButton("Zeskanuj kod kreskowy", viewModel::startScanner)
+        PrimaryButton("Zeskanuj kod kreskowy", { scanBarcode(context, { viewModel.lookup(it.gtin14) }, viewModel::enterEan) })
         SecondaryButton("Dodaj ręcznie", viewModel::addManually)
     }
 }

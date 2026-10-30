@@ -5,3 +5,4 @@ overall.xml
 build/
 local.properties
 .tools/
+.idea/

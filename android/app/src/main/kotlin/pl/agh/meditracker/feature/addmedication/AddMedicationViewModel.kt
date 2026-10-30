@@ -11,6 +11,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import pl.agh.meditracker.data.catalog.CatalogRepository
 import pl.agh.meditracker.data.repository.MedicationRepository
+import pl.agh.meditracker.feature.scanner.eanOf
 import pl.agh.meditracker.model.CatalogProduct
 import pl.agh.meditracker.model.DoseUnit
 import pl.agh.meditracker.model.Medication
@@ -19,7 +20,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 
-enum class Step { Method, Scanner, Ean, Recognizing, NotFound, LookupError, Found, Details, Dosage, Stock, Time, Date }
+enum class Step { Method, Ean, Recognizing, NotFound, LookupError, Found, Details, Dosage, Stock, Time, Date }
 
 enum class Exit { Closed, Saved }
 
@@ -97,7 +98,7 @@ class AddMedicationViewModel(
         lookupJob?.cancel()
         _state.update { s ->
             when {
-                s.hasData && s.history.lastOrNull() == Step.Method && s.step !in setOf(Step.Scanner, Step.Ean, Step.NotFound, Step.LookupError) -> s.copy(discardDialog = true)
+                s.hasData && s.history.lastOrNull() == Step.Method && s.step !in setOf(Step.Ean, Step.Recognizing, Step.NotFound, Step.LookupError) -> s.copy(discardDialog = true)
                 s.history.isEmpty() -> s.copy(exit = Exit.Closed)
                 else -> s.copy(step = s.history.last(), history = s.history.dropLast(1), lookingUp = false)
             }
@@ -110,14 +111,17 @@ class AddMedicationViewModel(
 
     fun addManually() = go(Step.Details)
 
-    fun startScanner() = go(Step.Scanner)
-
     fun enterEan() = go(Step.Ean)
 
-    fun retryScan() = _state.update { it.copy(step = Step.Scanner, lookingUp = false) }
+    // ponowny skan z ekranu „Nie znaleziono”: nowy wynik zastępuje ten ekran w historii
+    fun rescan(gtin: String) {
+        if (_state.value.step == Step.NotFound) _state.update { it.copy(step = it.history.last(), history = it.history.dropLast(1)) }
+        lookup(gtin)
+    }
 
-    fun lookup(ean: String) {
-        if (!isEanInput(ean) || _state.value.lookingUp) return
+    fun lookup(input: String) {
+        if (!isEanInput(input) || _state.value.lookingUp) return
+        val ean = eanOf(input)
         _state.update { it.copy(lookingUp = true, step = Step.Recognizing, ean = ean, history = it.history + it.step) }
         lookupJob = viewModelScope.launch {
             val product = try {
