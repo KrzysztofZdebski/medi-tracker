@@ -3,6 +3,7 @@ package pl.agh.meditracker.model
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.LocalDateTime
 
 enum class DoseStatus { Pending, Taken, Skipped, Snoozed }
 
@@ -63,6 +64,17 @@ data class DoseLog(
     val time: LocalTime,
     val status: DoseStatus,
     val snoozedUntil: LocalTime? = null,
+)
+
+// Keep the identity, dose and stock as they were at the time of the event.
+// Editing or removing a medication must not rewrite the journal.
+data class HistoryEntry(
+    val medication: Medication,
+    val date: LocalDate,
+    val time: LocalTime,
+    val status: DoseStatus,
+    val recordedAt: LocalDateTime,
+    val stockAfter: Int,
 )
 
 data class Dose(

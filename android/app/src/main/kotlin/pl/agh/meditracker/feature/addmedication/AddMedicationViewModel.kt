@@ -7,9 +7,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import pl.agh.meditracker.data.catalog.CatalogRepository
 import pl.agh.meditracker.data.repository.MedicationRepository
-import pl.agh.meditracker.feature.scanner.eanOf
 import pl.agh.meditracker.model.CatalogProduct
 import pl.agh.meditracker.model.DoseUnit
 import pl.agh.meditracker.model.Medication
@@ -18,14 +19,14 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 
-enum class Step { Method, Found, Details, Dosage, Stock, Time, Date }
+enum class Step { Method, Scanner, Ean, Recognizing, NotFound, LookupError, Found, Details, Dosage, Stock, Time, Date }
 
 enum class Exit { Closed, Saved }
 
 data class AddMedicationUiState(
+    val editingId: String? = null,
     val step: Step = Step.Method,
     val history: List<Step> = emptyList(),
-    val scanSheet: Boolean = false,
     val lookingUp: Boolean = false,
     val found: CatalogProduct? = null,
     val notFound: Boolean = false,
@@ -73,17 +74,33 @@ data class AddMedicationUiState(
 class AddMedicationViewModel(
     private val medications: MedicationRepository,
     private val catalog: CatalogRepository,
+    medicationId: String? = null,
+    editSchedule: Boolean = false,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(AddMedicationUiState())
+    private val original = medications.medications.value.find { it.id == medicationId }
+    private val _state = MutableStateFlow(original?.let { med ->
+        AddMedicationUiState(
+            editingId = med.id, step = if (editSchedule) Step.Dosage else Step.Details,
+            name = med.name, strength = med.strength, unit = med.unit, form = med.form,
+            manufacturer = med.manufacturer.orEmpty(), ean = med.ean.orEmpty(), packageSize = med.packageSize.orEmpty(),
+            doseQty = med.schedule.doseQty, days = med.schedule.days, daily = med.schedule.isDaily,
+            times = med.schedule.times, startDate = med.schedule.startDate, endDate = med.schedule.endDate,
+            stock = med.stock, threshold = med.refillThreshold.toString(),
+        )
+    } ?: AddMedicationUiState())
+    private var lookupJob: Job? = null
     val state: StateFlow<AddMedicationUiState> = _state.asStateFlow()
 
     private fun go(step: Step) = _state.update { it.copy(step = step, history = it.history + it.step) }
 
-    fun back() = _state.update { s ->
-        when {
-            s.hasData && s.history.lastOrNull() == Step.Method -> s.copy(discardDialog = true)
-            s.history.isEmpty() -> s.copy(exit = Exit.Closed)
-            else -> s.copy(step = s.history.last(), history = s.history.dropLast(1))
+    fun back() {
+        lookupJob?.cancel()
+        _state.update { s ->
+            when {
+                s.hasData && s.history.lastOrNull() == Step.Method && s.step !in setOf(Step.Scanner, Step.Ean, Step.NotFound, Step.LookupError) -> s.copy(discardDialog = true)
+                s.history.isEmpty() -> s.copy(exit = Exit.Closed)
+                else -> s.copy(step = s.history.last(), history = s.history.dropLast(1), lookingUp = false)
+            }
         }
     }
 
@@ -91,15 +108,27 @@ class AddMedicationViewModel(
 
     fun discard() = _state.update { it.copy(discardDialog = false, exit = Exit.Closed) }
 
-    fun showScanSheet(show: Boolean) = _state.update { it.copy(scanSheet = show) }
-
     fun addManually() = go(Step.Details)
 
+    fun startScanner() = go(Step.Scanner)
+
+    fun enterEan() = go(Step.Ean)
+
+    fun retryScan() = _state.update { it.copy(step = Step.Scanner, lookingUp = false) }
+
     fun lookup(ean: String) {
-        _state.update { it.copy(lookingUp = true) }
-        viewModelScope.launch {
-            val product = runCatching { catalog.findByEan(ean) }.getOrNull()
-            _state.update { it.copy(lookingUp = false, scanSheet = false, ean = eanOf(ean)) }
+        if (!isEanInput(ean) || _state.value.lookingUp) return
+        _state.update { it.copy(lookingUp = true, step = Step.Recognizing, ean = ean, history = it.history + it.step) }
+        lookupJob = viewModelScope.launch {
+            val product = try {
+                catalog.findByEan(ean)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _state.update { it.copy(lookingUp = false, step = Step.LookupError) }
+                return@launch
+            }
+            _state.update { it.copy(lookingUp = false) }
             if (product != null) {
                 val unit = unitForForm(product.form)
                 _state.update {
@@ -114,10 +143,10 @@ class AddMedicationViewModel(
                         packageSize = product.packageSize.orEmpty(),
                     )
                 }
-                go(Step.Found)
+                _state.update { it.copy(step = Step.Found) }
             } else {
                 _state.update { it.copy(found = null, notFound = true) }
-                go(Step.Details)
+                _state.update { it.copy(step = Step.NotFound) }
             }
         }
     }
@@ -161,7 +190,9 @@ class AddMedicationViewModel(
         val s = _state.value
         val errors = validateDetails(s.name, s.strength, s.ean)
         _state.update { it.copy(detailsErrors = errors) }
-        if (!errors.any) toDosage()
+        if (!errors.any) {
+            if (original != null) saveEdit(scheduleOnly = false) else toDosage()
+        }
     }
 
     private fun toDosage() {
@@ -218,7 +249,19 @@ class AddMedicationViewModel(
     fun submitDosage() {
         val error = validateSchedule(_state.value.days, _state.value.times)
         _state.update { it.copy(scheduleError = error) }
-        if (error == null) go(Step.Stock)
+        if (error == null) {
+            if (original != null) saveEdit(scheduleOnly = true) else go(Step.Stock)
+        }
+    }
+
+    private fun saveEdit(scheduleOnly: Boolean) {
+        val current = medications.medications.value.find { it.id == original?.id } ?: return
+        val edited = _state.value.toMedication()
+        medications.update(if (scheduleOnly) current.copy(schedule = edited.schedule) else current.copy(
+            name = edited.name, strength = edited.strength, form = edited.form, unit = edited.unit,
+            manufacturer = edited.manufacturer, ean = edited.ean, packageSize = edited.packageSize,
+        ))
+        _state.update { it.copy(exit = Exit.Saved) }
     }
 
     fun changeStock(delta: Int) = _state.update { it.copy(stock = (it.stock + delta).coerceAtLeast(0)) }

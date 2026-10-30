@@ -4,3 +4,4 @@ overall.xml
 .gradle/
 build/
 local.properties
+.tools/
