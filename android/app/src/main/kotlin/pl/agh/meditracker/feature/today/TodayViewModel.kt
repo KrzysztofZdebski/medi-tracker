@@ -90,7 +90,7 @@ class TodayViewModel(
 
     fun take(dose: Dose) {
         val med = repository.medications.value.find { it.id == dose.medication.id } ?: return
-        val qty = med.schedule.doseQty
+        val qty = dose.medication.schedule.doseQty
         if (med.stock < qty) return setSheet(TodaySheet.NoStock(med))
         repository.setDoseStatus(med.id, dose.date, dose.time, DoseStatus.Taken)
         val after = med.stock - qty

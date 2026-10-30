@@ -52,7 +52,8 @@ class CatalogRepository(private val dir: File) {
     }
 
     suspend fun findByEan(input: String): CatalogProduct? = withContext(Dispatchers.IO) {
-        if (!input.matches(Regex("[0-9]{8,14}")) || !db.exists()) return@withContext null
+        if (!input.matches(Regex("[0-9]{8,14}"))) return@withContext null
+        check(db.exists()) { "Katalog leków jest niedostępny. Spróbuj ponownie po synchronizacji." }
         SQLiteDatabase.openDatabase(db.path, null, SQLiteDatabase.OPEN_READONLY).use { d ->
             d.rawQuery(
                 """SELECT p.nazwa, p.moc, p.postac, p.podmiot, o.zawartosc, o.ilosc FROM kod k

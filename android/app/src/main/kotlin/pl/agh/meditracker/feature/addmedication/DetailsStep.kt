@@ -25,29 +25,31 @@ fun DetailsStep(state: AddMedicationUiState, viewModel: AddMedicationViewModel) 
                 AppAlert("Popraw zaznaczone pola", "Wprowadzone dane zostały zachowane.", AlertTone.Error)
             state.notFound -> AppAlert("Nie znaleziono leku", "Uzupełnij dane ręcznie.", AlertTone.Info)
         }
-        Caption("Pola oznaczone * są wymagane")
-        AppTextField(state.name, { viewModel.updateDetails(name = it) }, "Nazwa leku *", error = errors?.name)
-        AppTextField(state.strength, { viewModel.updateDetails(strength = it) }, "Moc *", error = errors?.strength)
+        Caption(if (state.editingId != null) "Zmiana danych nie zmienia historii przyjęć." else "Pola oznaczone * są wymagane")
+        AppTextField(state.name, { viewModel.updateDetails(name = it) }, "Nazwa leku *", error = errors?.name, tall = state.editingId != null)
+        AppTextField(state.strength, { viewModel.updateDetails(strength = it) }, "Moc *", error = errors?.strength, tall = state.editingId != null)
         AppTextField(
             value = state.unit.pickerLabel,
             onValueChange = {},
             label = "Postać i jednostka *",
             onClick = { unitPicker = true },
             trailingIcon = Icons.Outlined.ArrowDropDown,
+            tall = state.editingId != null,
         )
-        AppTextField(state.manufacturer, { viewModel.updateDetails(manufacturer = it) }, "Producent · opcjonalnie")
+        AppTextField(state.manufacturer, { viewModel.updateDetails(manufacturer = it) }, "Producent · opcjonalnie", tall = state.editingId != null)
         AppTextField(
             value = state.ean,
             onValueChange = { viewModel.updateDetails(ean = it) },
             label = "EAN · opcjonalnie",
             error = errors?.ean,
             keyboardType = KeyboardType.Number,
+            tall = state.editingId != null,
         )
-        AppTextField(state.packageSize, { viewModel.updateDetails(packageSize = it) }, "Wielkość opakowania · opcjonalnie")
+        if (state.editingId == null) AppTextField(state.packageSize, { viewModel.updateDetails(packageSize = it) }, "Wielkość opakowania · opcjonalnie")
         if (state.showDetailsErrors) {
             PrimaryButton("Popraw dane", viewModel::submitDetails)
         } else {
-            PrimaryButton("Dalej · dawkowanie", viewModel::submitDetails)
+            PrimaryButton(if (state.editingId != null) "Zapisz zmiany" else "Dalej · dawkowanie", viewModel::submitDetails)
             SecondaryButton("Anuluj", viewModel::back)
         }
     }

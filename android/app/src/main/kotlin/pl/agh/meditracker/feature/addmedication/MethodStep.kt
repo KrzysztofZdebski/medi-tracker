@@ -12,23 +12,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import pl.agh.meditracker.feature.scanner.scanBarcode
-import pl.agh.meditracker.ui.components.AppBottomSheet
-import pl.agh.meditracker.ui.components.AppTextField
 import pl.agh.meditracker.ui.components.IconBadge
 import pl.agh.meditracker.ui.components.PrimaryButton
 import pl.agh.meditracker.ui.components.SecondaryButton
 
 @Composable
-fun MethodStep(state: AddMedicationUiState, viewModel: AddMedicationViewModel) {
+fun MethodStep(viewModel: AddMedicationViewModel) {
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
     StepColumn {
@@ -48,37 +41,7 @@ fun MethodStep(state: AddMedicationUiState, viewModel: AddMedicationViewModel) {
                 Text("Sprawdź dane przed zapisaniem.", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
             }
         }
-        PrimaryButton(
-            "Zeskanuj kod kreskowy",
-            {
-                scanBarcode(
-                    context,
-                    onResult = { viewModel.lookup(it.gtin14) },
-                    onFallback = { viewModel.showScanSheet(true) },
-                )
-            },
-            loading = state.lookingUp && !state.scanSheet,
-        )
+        PrimaryButton("Zeskanuj kod kreskowy", { scanBarcode(context, { viewModel.lookup(it.gtin14) }, viewModel::enterEan) })
         SecondaryButton("Dodaj ręcznie", viewModel::addManually)
-    }
-    if (state.scanSheet) {
-        EanSheet(state.lookingUp, onDismiss = { viewModel.showScanSheet(false) }, onConfirm = viewModel::lookup)
-    }
-}
-
-@Composable
-private fun EanSheet(loading: Boolean, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
-    var ean by rememberSaveable { mutableStateOf("") }
-    AppBottomSheet(onDismiss = onDismiss, title = "Wpisz kod EAN", icon = Icons.Outlined.QrCodeScanner) {
-        Caption("Wpisz cyfry spod kodu kreskowego na opakowaniu.")
-        AppTextField(
-            value = ean,
-            onValueChange = { ean = it.filter(Char::isDigit).take(14) },
-            label = "Kod EAN",
-            keyboardType = KeyboardType.Number,
-            placeholder = "5901234123457",
-        )
-        PrimaryButton("Wyszukaj lek", { onConfirm(ean) }, enabled = isEanInput(ean), loading = loading)
-        SecondaryButton("Anuluj", onDismiss)
     }
 }
