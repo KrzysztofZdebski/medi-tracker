@@ -9,6 +9,10 @@
         android:icon="@mipmap/ic_launcher"
         android:label="MedTracker"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <!-- moduł skanera pobierany przez Play Services już przy instalacji -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode_ui" />
         <activity
             android:name=".MainActivity"
             android:exported="true">
