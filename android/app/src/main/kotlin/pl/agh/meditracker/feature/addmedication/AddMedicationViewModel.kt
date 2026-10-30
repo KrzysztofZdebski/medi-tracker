@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import pl.agh.meditracker.data.catalog.CatalogRepository
 import pl.agh.meditracker.data.repository.MedicationRepository
+import pl.agh.meditracker.feature.scanner.eanOf
 import pl.agh.meditracker.model.CatalogProduct
 import pl.agh.meditracker.model.DoseUnit
 import pl.agh.meditracker.model.Medication
@@ -98,7 +99,7 @@ class AddMedicationViewModel(
         _state.update { it.copy(lookingUp = true) }
         viewModelScope.launch {
             val product = runCatching { catalog.findByEan(ean) }.getOrNull()
-            _state.update { it.copy(lookingUp = false, scanSheet = false, ean = ean) }
+            _state.update { it.copy(lookingUp = false, scanSheet = false, ean = eanOf(ean)) }
             if (product != null) {
                 val unit = unitForForm(product.form)
                 _state.update {

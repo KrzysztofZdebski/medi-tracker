@@ -1,4 +1,4 @@
-package pl.agh.meditracker
+package pl.agh.meditracker.feature.scanner
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -59,4 +59,18 @@ class Gs1Test {
 
     @Test
     fun garbage() = assertNull(parseScan("hello"))
+}
+
+class EanOfTest {
+    @Test
+    fun ean13() = assertEquals("5909990296026", eanOf("05909990296026"))
+
+    @Test
+    fun ean8() = assertEquals("59012341", eanOf("00000059012341"))
+
+    @Test
+    fun alreadyShort() = assertEquals("5909990296026", eanOf("5909990296026"))
+
+    @Test
+    fun gtin14WithIndicator() = assertEquals("15909990296023", eanOf("15909990296023"))
 }

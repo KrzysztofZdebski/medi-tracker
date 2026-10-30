@@ -1,13 +1,10 @@
 # Aplikacja Android
 
-Na razie to szkielet do testów, z trzema funkcjami:
-- **Synchronizuj:** pobiera `version.json` i, jeśli jest nowsza wersja, `leki.sqlite.gz` z release `katalog`. Wypisuje kody HTTP, host, typ, rozmiar i czas, a potem sprawdza sumę `sha256` i dopiero wtedy podmienia katalog.
-- **Skanuj kod z pudełka:** otwiera skaner kodów z Google Play Services (EAN-13/EAN-8/UPC-A i GS1 DataMatrix). Z DataMatrix odczytuje też datę ważności, serię i numer seryjny ([`Gs1.kt`](app/src/main/kotlin/pl/agh/meditracker/Gs1.kt)), a potem wyszukuje GTIN w katalogu.
-- **Szukaj:** wyszukuje GTIN/EAN (8–14 cyfr, uzupełniany zerami do 14) w lokalnym katalogu i wypisuje nazwę, moc, zawartość opakowania i kod.
+Aplikacja w Jetpack Compose. Katalog leków synchronizuje się w tle przy starcie (`CatalogRepository`): pobiera `version.json` i, jeśli jest nowsza wersja, `leki.sqlite.gz` z release `katalog`, sprawdza sumę `sha256` i dopiero wtedy podmienia katalog.
 
-Jedyna zależność poza Android SDK to `play-services-code-scanner` (skaner ML Kit z gotowym ekranem kamery; aplikacja nie potrzebuje uprawnienia `CAMERA`, ale telefon musi mieć Google Play Services). Reszta: UI tworzone w kodzie, `HttpURLConnection`, `SQLiteDatabase`.
+**Skaner kodów** (`feature/scanner`): przycisk „Zeskanuj kod kreskowy” w kreatorze dodawania leku otwiera skaner z Google Play Services (`play-services-code-scanner`, EAN-13/EAN-8/UPC-A i GS1 DataMatrix). Aplikacja nie potrzebuje uprawnienia `CAMERA`, ale telefon musi mieć Google Play Services. Z DataMatrix [`Gs1.kt`](app/src/main/kotlin/pl/agh/meditracker/feature/scanner/Gs1.kt) odczytuje też datę ważności, serię i numer seryjny. GTIN trafia do wyszukiwania w katalogu; po anulowaniu, błędzie skanera albo nierozpoznanym kodzie otwiera się okno do ręcznego wpisania EAN.
 
-Testy parsera GS1: `.\gradlew.bat testDebugUnitTest`.
+Testy jednostkowe (m.in. parsera GS1): `.\gradlew.bat testDebugUnitTest`.
 
 ## Wymagania
 

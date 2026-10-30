@@ -1,4 +1,4 @@
-package pl.agh.meditracker
+package pl.agh.meditracker.feature.scanner
 
 import java.time.YearMonth
 
@@ -58,4 +58,14 @@ fun parseScan(raw: String): Scan? {
 
     val gtin = fields["01"]?.takeIf { it.all(Char::isDigit) } ?: return null
     return Scan(gtin, fields["17"]?.let(::parseExpiry), fields["10"], fields["21"])
+}
+
+// GTIN-14 → kod spod kreski, jak w formularzu: EAN-8 albo EAN-13; GTIN-14 z cyfrą wskaźnika zostaje bez zmian
+fun eanOf(gtin: String): String {
+    val gtin14 = gtin.padStart(14, '0')
+    return when {
+        gtin14.startsWith("000000") -> gtin14.takeLast(8)
+        gtin14.startsWith("0") -> gtin14.drop(1)
+        else -> gtin14
+    }
 }
