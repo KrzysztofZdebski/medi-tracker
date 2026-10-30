@@ -17,8 +17,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import pl.agh.meditracker.feature.scanner.scanBarcode
 import pl.agh.meditracker.ui.components.AppBottomSheet
 import pl.agh.meditracker.ui.components.AppTextField
 import pl.agh.meditracker.ui.components.IconBadge
@@ -28,6 +30,7 @@ import pl.agh.meditracker.ui.components.SecondaryButton
 @Composable
 fun MethodStep(state: AddMedicationUiState, viewModel: AddMedicationViewModel) {
     val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
     StepColumn {
         Caption("Wybierz sposób dodania leku")
         IconBadge(Icons.Outlined.QrCodeScanner, size = 88.dp, modifier = Modifier.padding(top = 8.dp))
@@ -45,7 +48,17 @@ fun MethodStep(state: AddMedicationUiState, viewModel: AddMedicationViewModel) {
                 Text("Sprawdź dane przed zapisaniem.", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
             }
         }
-        PrimaryButton("Zeskanuj kod kreskowy", { viewModel.showScanSheet(true) })
+        PrimaryButton(
+            "Zeskanuj kod kreskowy",
+            {
+                scanBarcode(
+                    context,
+                    onResult = { viewModel.lookup(it.gtin14) },
+                    onFallback = { viewModel.showScanSheet(true) },
+                )
+            },
+            loading = state.lookingUp && !state.scanSheet,
+        )
         SecondaryButton("Dodaj ręcznie", viewModel::addManually)
     }
     if (state.scanSheet) {
