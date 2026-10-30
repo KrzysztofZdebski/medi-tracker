@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import pl.agh.meditracker.model.DoseStatus
 import pl.agh.meditracker.ui.theme.MediTrackerTheme
 import java.time.DayOfWeek
+import pl.agh.meditracker.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,15 +54,19 @@ fun AppTopBar(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
     onClose: (() -> Unit)? = null,
+    designIcons: Boolean = false,
+    largeTitle: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     TopAppBar(
-        title = { Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        title = { Text(title, style = if (largeTitle) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        expandedHeight = if (designIcons) 72.dp else 64.dp,
         modifier = modifier,
         navigationIcon = {
             when {
                 onBack != null -> IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Wstecz")
+                    if (designIcons) DesignIcon(R.raw.design_back_24, 24.dp, "Wstecz")
+                    else Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Wstecz")
                 }
                 onClose != null -> IconButton(onClick = onClose) {
                     Icon(Icons.Outlined.Close, contentDescription = "Zamknij")
@@ -78,9 +83,10 @@ fun AppTopBar(
 }
 
 @Composable
-fun NotificationsAction(onClick: () -> Unit) {
+fun NotificationsAction(designIcon: Boolean = false, onClick: () -> Unit) {
     IconButton(onClick = onClick) {
-        Icon(Icons.Outlined.Notifications, contentDescription = "Powiadomienia")
+        if (designIcon) DesignIcon(R.raw.design_bell_24, 24.dp, "Powiadomienia")
+        else Icon(Icons.Outlined.Notifications, contentDescription = "Powiadomienia")
     }
 }
 
@@ -92,14 +98,15 @@ private val bottomItems = listOf(
 )
 
 @Composable
-fun AppBottomBar(selectedIndex: Int, modifier: Modifier = Modifier, onSelect: (Int) -> Unit) {
+fun AppBottomBar(selectedIndex: Int, modifier: Modifier = Modifier, designIcons: Boolean = false, onSelect: (Int) -> Unit) {
     val colors = MaterialTheme.colorScheme
-    NavigationBar(modifier = modifier, containerColor = colors.surface) {
+    val resources = listOf(R.raw.design_home_24, R.raw.design_pill_24, R.raw.design_history_24, R.raw.design_settings_24)
+    NavigationBar(modifier = modifier, containerColor = if (designIcons) colors.surfaceContainer else colors.surface) {
         bottomItems.forEachIndexed { index, (label, icon) ->
             NavigationBarItem(
                 selected = index == selectedIndex,
                 onClick = { onSelect(index) },
-                icon = { Icon(icon, contentDescription = null) },
+                icon = { if (designIcons) DesignIcon(resources[index], 24.dp) else Icon(icon, contentDescription = null) },
                 label = { Text(label, style = MaterialTheme.typography.labelMedium) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = colors.onPrimaryContainer,

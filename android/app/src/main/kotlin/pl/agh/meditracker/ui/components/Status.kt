@@ -39,6 +39,7 @@ import pl.agh.meditracker.ui.theme.Success
 import pl.agh.meditracker.ui.theme.SuccessContainer
 import pl.agh.meditracker.ui.theme.Warning
 import pl.agh.meditracker.ui.theme.WarningContainer
+import pl.agh.meditracker.R
 
 enum class StockLevel { Normal, Low, Empty }
 
@@ -97,13 +98,14 @@ fun StockIndicator(
     progress: Float,
     daysText: String?,
     modifier: Modifier = Modifier,
+    designIcons: Boolean = false,
 ) {
     val color = when (level) {
         StockLevel.Normal -> MaterialTheme.colorScheme.primary
         StockLevel.Low -> Warning
         StockLevel.Empty -> MaterialTheme.colorScheme.error
     }
-    val textColor = if (level == StockLevel.Normal) MaterialTheme.colorScheme.onSurface else color
+    val textColor = if (designIcons) color else if (level == StockLevel.Normal) MaterialTheme.colorScheme.onSurface else color
     val icon = when (level) {
         StockLevel.Normal -> Icons.Outlined.Inventory2
         StockLevel.Low -> Icons.Outlined.WarningAmber
@@ -111,20 +113,21 @@ fun StockIndicator(
     }
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = textColor, modifier = Modifier.size(20.dp))
+            if (designIcons && level == StockLevel.Normal) DesignIcon(R.raw.design_box_20, 20.dp)
+            else Icon(icon, contentDescription = null, tint = textColor, modifier = Modifier.size(20.dp))
             Text(text, style = MaterialTheme.typography.bodyLarge, color = textColor)
         }
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(8.dp)
+                .height(if (designIcons) 6.dp else 8.dp)
                 .clip(CircleShape)
                 .background(Line),
         ) {
             Box(
                 Modifier
                     .fillMaxWidth(progress.coerceIn(0f, 1f))
-                    .height(8.dp)
+                    .height(if (designIcons) 6.dp else 8.dp)
                     .clip(CircleShape)
                     .background(color),
             )
@@ -136,7 +139,7 @@ fun StockIndicator(
 }
 
 @Composable
-fun AppAlert(title: String, message: String?, tone: AlertTone, modifier: Modifier = Modifier) {
+fun AppAlert(title: String, message: String?, tone: AlertTone, modifier: Modifier = Modifier, designIcons: Boolean = false) {
     val colors = MaterialTheme.colorScheme
     val (container, content, icon) = when (tone) {
         AlertTone.Info -> Triple(colors.primaryContainer, colors.primary, Icons.Outlined.Info)
@@ -146,11 +149,12 @@ fun AppAlert(title: String, message: String?, tone: AlertTone, modifier: Modifie
     }
     Surface(modifier = modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = container) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(24.dp))
+            if (designIcons && tone == AlertTone.Info) DesignIcon(R.raw.design_info_24, 24.dp)
+            else Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(24.dp))
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.labelLarge, color = content)
                 if (message != null) {
-                    Text(message, style = MaterialTheme.typography.bodyMedium, color = colors.onSurface)
+                    Text(message, style = MaterialTheme.typography.bodyMedium, color = if (designIcons) content else colors.onSurface)
                 }
             }
         }

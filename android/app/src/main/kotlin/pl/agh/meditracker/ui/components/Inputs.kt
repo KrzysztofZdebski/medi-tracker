@@ -40,6 +40,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.time.DayOfWeek
+import pl.agh.meditracker.R
 
 @Composable
 fun AppTextField(
@@ -54,6 +55,7 @@ fun AppTextField(
     onClick: (() -> Unit)? = null,
     placeholder: String? = null,
     trailingIcon: ImageVector? = null,
+    tall: Boolean = false,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
@@ -89,7 +91,7 @@ fun AppTextField(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 64.dp)
+                            .heightIn(min = if (tall) 80.dp else 64.dp)
                             .clip(shape)
                             .background(if (enabled) colors.surface else colors.surfaceContainer)
                             .border(if (focused || error != null) 2.dp else 1.dp, borderColor, shape)
@@ -139,6 +141,7 @@ fun NumberStepper(
     onPlus: () -> Unit,
     modifier: Modifier = Modifier,
     isError: Boolean = false,
+    designIcons: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = MaterialTheme.shapes.small
@@ -148,12 +151,14 @@ fun NumberStepper(
             .height(56.dp)
             .clip(shape)
             .background(colors.surface)
-            .border(if (isError) 2.dp else 1.dp, if (isError) colors.error else colors.outline, shape)
+            .then(if (designIcons) Modifier else Modifier.border(if (isError) 2.dp else 1.dp, if (isError) colors.error else colors.outline, shape))
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onMinus) {
-            Icon(Icons.Outlined.Remove, contentDescription = "Zmniejsz", tint = colors.primary)
+        val buttonModifier = if (designIcons) Modifier.size(48.dp).padding(6.dp).background(colors.surfaceContainer, MaterialTheme.shapes.extraSmall) else Modifier
+        IconButton(onClick = onMinus, modifier = buttonModifier) {
+            if (designIcons) DesignIcon(R.raw.design_minus_24, 24.dp, "Zmniejsz")
+            else Icon(Icons.Outlined.Remove, contentDescription = "Zmniejsz", tint = colors.primary)
         }
         Text(
             value,
@@ -162,8 +167,9 @@ fun NumberStepper(
             color = if (isError) colors.error else colors.onSurface,
             textAlign = TextAlign.Center,
         )
-        IconButton(onClick = onPlus) {
-            Icon(Icons.Outlined.Add, contentDescription = "Zwiększ", tint = colors.primary)
+        IconButton(onClick = onPlus, modifier = buttonModifier) {
+            if (designIcons) DesignIcon(R.raw.design_plus_24, 24.dp, "Zwiększ")
+            else Icon(Icons.Outlined.Add, contentDescription = "Zwiększ", tint = colors.primary)
         }
     }
 }
@@ -175,12 +181,13 @@ fun TimeChip(
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     onEdit: (() -> Unit)? = null,
+    designIcons: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     Surface(
         onClick = onClick,
-        modifier = modifier.height(48.dp),
-        shape = CircleShape,
+        modifier = modifier.height(if (designIcons) 64.dp else 48.dp),
+        shape = if (designIcons) MaterialTheme.shapes.small else CircleShape,
         color = if (selected) colors.primaryContainer else colors.surface,
         contentColor = if (selected) colors.onPrimaryContainer else colors.onSurface,
         border = BorderStroke(1.dp, if (selected) colors.primary else colors.outlineVariant),
@@ -190,11 +197,13 @@ fun TimeChip(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Outlined.Schedule, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))
+            if (designIcons) DesignIcon(R.raw.design_clock_24, 24.dp)
+            else Icon(Icons.Outlined.Schedule, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))
             Text(time, style = MaterialTheme.typography.labelLarge)
             if (onEdit != null) {
                 IconButton(onClick = onEdit, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Outlined.Edit, contentDescription = "Edytuj", modifier = Modifier.size(18.dp))
+                    if (designIcons) DesignIcon(R.raw.design_edit_20, 20.dp, "Edytuj")
+                    else Icon(Icons.Outlined.Edit, contentDescription = "Edytuj", modifier = Modifier.size(18.dp))
                 }
             }
         }

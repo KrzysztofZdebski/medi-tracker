@@ -30,11 +30,11 @@ fun DosageStep(state: AddMedicationUiState, viewModel: AddMedicationViewModel) {
     var frequencyPicker by rememberSaveable { mutableStateOf(false) }
     val typography = MaterialTheme.typography
     StepColumn {
-        Caption("Krok 1 z 2 · Harmonogram")
+        Caption(if (state.editingId != null) "Zmiany obejmą przyszłe dawki." else "Krok 1 z 2 · Harmonogram")
         Text("${state.name} ${state.strength}", style = typography.titleLarge)
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Caption("Dawka na jedno przyjęcie")
-            NumberStepper(state.unit.format(state.doseQty), { viewModel.changeDose(-1) }, { viewModel.changeDose(1) })
+            NumberStepper(state.unit.format(state.doseQty), { viewModel.changeDose(-1) }, { viewModel.changeDose(1) }, designIcons = state.editingId != null)
         }
         AppTextField(
             value = frequencies[if (state.daily) 0 else 1],
@@ -57,7 +57,7 @@ fun DosageStep(state: AddMedicationUiState, viewModel: AddMedicationViewModel) {
         } else {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 state.times.forEachIndexed { index, time ->
-                    TimeChip(formatTime(time), { viewModel.editTime(index) }, onEdit = { viewModel.editTime(index) })
+                    TimeChip(formatTime(time), { viewModel.editTime(index) }, onEdit = { viewModel.editTime(index) }, designIcons = state.editingId != null)
                 }
             }
             state.scheduleError?.let { Text(it, style = typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
@@ -78,7 +78,7 @@ fun DosageStep(state: AddMedicationUiState, viewModel: AddMedicationViewModel) {
             onClick = { viewModel.editDate(end = true) },
             trailingIcon = Icons.Outlined.CalendarToday,
         )
-        PrimaryButton("Dalej · zapas", viewModel::submitDosage)
+        PrimaryButton(if (state.editingId != null) "Zapisz zmiany" else "Dalej · zapas", viewModel::submitDosage)
     }
     if (frequencyPicker) {
         OptionSheet(
