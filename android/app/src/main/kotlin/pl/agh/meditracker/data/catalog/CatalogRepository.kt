@@ -25,7 +25,7 @@ class CatalogRepository(private val dir: File) {
     private val localVersion = File(dir, "version.json")
 
     private fun localStan(): String? =
-        if (localVersion.exists()) JSONObject(localVersion.readText()).getString("stan_na_dzien") else null
+        runCatching { JSONObject(localVersion.readText()).getString("stan_na_dzien") }.getOrNull()
 
     // data stanu RPL lokalnego katalogu; null, dopóki pierwsza synchronizacja się nie uda
     val asOf: String? get() = localStan()?.takeIf { db.exists() }
@@ -67,6 +67,8 @@ class CatalogRepository(private val dir: File) {
 
     suspend fun findByEan(input: String): CatalogProduct? = withContext(Dispatchers.IO) {
         if (!input.matches(Regex("[0-9]{8,14}"))) return@withContext null
+        // ponowna próba bez katalogu najpierw go pobiera
+        if (!db.exists()) sync()
         check(db.exists()) { "Katalog leków jest niedostępny. Spróbuj ponownie po synchronizacji." }
         SQLiteDatabase.openDatabase(db.path, null, SQLiteDatabase.OPEN_READONLY).use { d ->
             d.rawQuery(

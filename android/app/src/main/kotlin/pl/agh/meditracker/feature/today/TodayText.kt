@@ -5,6 +5,7 @@ import pl.agh.meditracker.model.DoseStatus
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
@@ -13,9 +14,11 @@ private val dateFormat = DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale.forL
 private val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
 
 val Dose.dueTime: LocalTime get() = if (status == DoseStatus.Snoozed) snoozedUntil ?: time else time
+// odłożenie po północy przechodzi na następny dzień (jak w reminder/Reminders.kt)
+val Dose.dueAt: LocalDateTime get() = date.plusDays(if (dueTime < time) 1 else 0).atTime(dueTime)
 
 fun nextDose(doses: List<Dose>): Dose? =
-    doses.filter { it.status == DoseStatus.Pending || it.status == DoseStatus.Snoozed }.minByOrNull { it.dueTime }
+    doses.filter { it.status == DoseStatus.Pending || it.status == DoseStatus.Snoozed }.minByOrNull { it.dueAt }
 
 fun relativeTimeText(now: LocalTime, target: LocalTime): String {
     val minutes = Duration.between(now.truncatedTo(ChronoUnit.MINUTES), target).toMinutes()

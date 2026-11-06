@@ -187,7 +187,7 @@ fun EmptyState(
     message: String,
     modifier: Modifier = Modifier,
     actionText: String? = null,
-    onAction: () -> Unit = {},
+    onAction: () -> Unit,
 ) {
     Column(
         modifier = modifier.fillMaxWidth().padding(vertical = 24.dp),

@@ -18,6 +18,8 @@ import pl.agh.meditracker.ui.components.AppBottomBar
 import pl.agh.meditracker.feature.history.HistoryScreen
 import pl.agh.meditracker.feature.medicationdetails.MedicationDetailsScreen
 import pl.agh.meditracker.feature.settings.SettingsScreen
+import pl.agh.meditracker.feature.settings.NotificationSettingsScreen
+import pl.agh.meditracker.feature.settings.AboutScreen
 
 private val tabs = listOf("today", "medications", "history", "settings")
 
@@ -28,7 +30,7 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
     val route = entry?.destination?.route?.substringBefore('?')
     Scaffold(
         bottomBar = {
-            if (route in tabs) AppBottomBar(tabs.indexOf(route), designIcons = route == "history") { nav.openTab(tabs[it]) }
+            if (route in tabs) AppBottomBar(tabs.indexOf(route), designIcons = route == "history" || route == "settings") { nav.openTab(tabs[it]) }
         },
     ) { padding ->
         NavHost(nav, startDestination = if (onboardingDone) "today" else "onboarding", Modifier.padding(padding)) {
@@ -42,7 +44,8 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
                 TodayScreen(
                     onAddMedication = { nav.navigate("add") },
                     onOpenHistory = { nav.openTab("history") },
-                    onOpenSettings = { nav.openTab("settings") },
+                    onNotifications = { nav.navigate("notifications") },
+                    onOpenMedication = { nav.navigate("medication/$it") },
                 )
             }
             composable("medications?added={added}") { e ->
@@ -51,7 +54,7 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
                     onAddMedication = { nav.navigate("add") },
                     onOpenToday = { nav.openTab("today") },
                     onOpenMedication = { nav.navigate("medication/$it") },
-                    onOpenSettings = { nav.openTab("settings") },
+                    onNotifications = { nav.navigate("notifications") },
                 )
             }
             composable("add") {
@@ -74,15 +77,17 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
                     medicationId = e.arguments?.getString("id"), editSchedule = e.arguments?.getString("schedule") == "true",
                 )
             }
-            composable("history") { HistoryScreen(onOpenToday = { nav.openTab("today") }, onOpenSettings = { nav.openTab("settings") }) }
-            composable("settings") { SettingsScreen() }
+            composable("history") { HistoryScreen(onOpenToday = { nav.openTab("today") }, onNotifications = { nav.navigate("notifications") }) }
+            composable("settings") { SettingsScreen(onNotifications = { nav.navigate("notifications") }, onAbout = { nav.navigate("about") }) }
+            composable("notifications") { NotificationSettingsScreen(onBack = { nav.popBackStack() }, onOpenSettings = { nav.openTab("settings") }) }
+            composable("about") { AboutScreen(onBack = { nav.popBackStack() }) }
         }
     }
 }
 
 private fun NavHostController.openTab(tab: String) {
     if (tab == "today") {
-        popBackStack("today", inclusive = false)
+        if (!popBackStack("today", inclusive = false)) navigate("today") { launchSingleTop = true }
         return
     }
     navigate(if (tab == "medications") "medications?added=false" else tab) {
