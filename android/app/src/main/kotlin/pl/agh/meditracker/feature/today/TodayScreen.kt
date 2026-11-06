@@ -44,8 +44,8 @@ import pl.agh.meditracker.ui.components.NotificationsAction
 import pl.agh.meditracker.ui.components.SecondaryButton
 
 @Composable
-fun TodayScreen(onAddMedication: () -> Unit, onOpenHistory: () -> Unit) {
-    val viewModel = appViewModel { container -> TodayViewModel(container.medications) }
+fun TodayScreen(onAddMedication: () -> Unit, onOpenHistory: () -> Unit, onOpenSettings: () -> Unit = {}) {
+    val viewModel = appViewModel { container -> TodayViewModel(container.medications, remindersEnabled = container.settings.remindersFlow) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val taken = state.feedback as? TodayFeedback.Taken
@@ -55,7 +55,7 @@ fun TodayScreen(onAddMedication: () -> Unit, onOpenHistory: () -> Unit) {
         if (result == SnackbarResult.ActionPerformed) viewModel.undo(taken)
     }
     Scaffold(
-        topBar = { AppTopBar("Dzisiaj", actions = { NotificationsAction {} }) },
+        topBar = { AppTopBar("Dzisiaj", actions = { NotificationsAction(onClick = onOpenSettings) }) },
         snackbarHost = { AppSnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0),
@@ -144,7 +144,7 @@ fun TodayContent(
         } else {
             item {
                 Text(
-                    "Przypomnienia są włączone.",
+                    if (state.remindersEnabled) "Przypomnienia są włączone." else "Przypomnienia są wyłączone. Włączysz je w Ustawieniach.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = muted,
                     textAlign = TextAlign.Center,

@@ -1,10 +1,16 @@
 package pl.agh.meditracker.data.repository
 
+import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import pl.agh.meditracker.model.Dose
 import pl.agh.meditracker.model.DoseLog
 import pl.agh.meditracker.model.DoseStatus
@@ -17,25 +23,50 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.util.UUID
 
-class MedicationRepository(private val clock: Clock = Clock.systemDefaultZone()) {
-    private val _medications = MutableStateFlow<List<Medication>>(emptyList())
+// Stan w pamięci (StateFlow dla UI) z zapisem do bazy: każda zmiana trafia do store po kolei, poza wątkiem UI.
+// Bez store (testy) repozytorium działa tylko w pamięci.
+class MedicationRepository(
+    private val clock: Clock = Clock.systemDefaultZone(),
+    private val store: MedicationStore? = null,
+    initial: StoredState = StoredState(),
+) {
+    private val _medications = MutableStateFlow(initial.medications)
     val medications: StateFlow<List<Medication>> = _medications
 
-    private val logs = MutableStateFlow<List<DoseLog>>(emptyList())
-    private val _history = MutableStateFlow<List<HistoryEntry>>(emptyList())
+    private val logs = MutableStateFlow(initial.logs)
+    private val _history = MutableStateFlow(initial.history)
     val history: StateFlow<List<HistoryEntry>> = _history
-    private val schedules = mutableMapOf<String, List<Pair<LocalDateTime, Schedule>>>()
+    private val schedules = initial.schedules.toMutableMap()
+
+    // jeden wątek naraz, więc zapisy wykonują się w kolejności wywołań
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val writes = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+
+    private fun persist(write: MedicationStore.() -> Unit) {
+        val store = store ?: return
+        writes.launch {
+            runCatching { store.write() }.onFailure { Log.e("MedicationRepository", "Zapis do bazy nie powiódł się", it) }
+        }
+    }
+
+    // czeka, aż wszystkie dotychczasowe zmiany będą w bazie (np. zanim system zamknie proces po akcji z powiadomienia)
+    suspend fun awaitWrites() = writes.launch {}.join()
 
     fun update(medication: Medication) {
         val previous = _medications.value.find { it.id == medication.id } ?: return
         if (previous.schedule != medication.schedule) {
-            schedules[medication.id] = schedules.getValue(medication.id) + (LocalDateTime.now(clock) to medication.schedule)
+            val versions = schedules.getValue(medication.id) + (LocalDateTime.now(clock) to medication.schedule)
+            schedules[medication.id] = versions
+            persist { saveSchedule(medication.id, versions.lastIndex, versions.last().first, medication.schedule) }
         }
         _medications.update { list -> list.map { if (it.id == medication.id) medication else it } }
+        persist { saveMedication(medication) }
     }
 
     fun remove(id: String) {
         _medications.update { list -> list.filterNot { it.id == id } }
+        val at = LocalDateTime.now(clock)
+        persist { archiveMedication(id, at) }
     }
 
     fun dosesFor(date: LocalDate): Flow<List<Dose>> = combine(_medications, logs) { meds, logs ->
@@ -55,11 +86,18 @@ class MedicationRepository(private val clock: Clock = Clock.systemDefaultZone())
         val saved = medication.copy(id = UUID.randomUUID().toString())
         schedules[saved.id] = listOf(LocalDateTime.MIN to saved.schedule)
         _medications.update { it + saved }
+        persist {
+            saveMedication(saved)
+            saveSchedule(saved.id, 0, LocalDateTime.MIN, saved.schedule)
+        }
         return saved
     }
 
     fun refill(medicationId: String, amount: Int) {
-        if (amount > 0) changeStock(medicationId, amount)
+        if (amount <= 0) return
+        changeStock(medicationId, amount)
+        val med = _medications.value.find { it.id == medicationId } ?: return
+        persist { saveMedication(med) }
     }
 
     fun setDoseStatus(
@@ -77,16 +115,16 @@ class MedicationRepository(private val clock: Clock = Clock.systemDefaultZone())
         val qty = schedule.doseQty
         if (previous?.status == DoseStatus.Taken) changeStock(medicationId, oldEntry?.medication?.schedule?.doseQty ?: qty)
         if (status == DoseStatus.Taken) changeStock(medicationId, -qty)
+        val updated = _medications.value.first { it.id == medicationId }
+        val entry = if (status == DoseStatus.Taken || status == DoseStatus.Skipped) {
+            HistoryEntry(med.copy(schedule = schedule), date, time, status, LocalDateTime.now(clock), updated.stock)
+        } else null
+        val log = if (status == DoseStatus.Pending) null else DoseLog(medicationId, date, time, status, snoozedUntil)
         _history.update { entries ->
-            val rest = entries.filterNot { it.medication.id == medicationId && it.date == date && it.time == time }
-            if (status == DoseStatus.Taken || status == DoseStatus.Skipped) {
-                rest + HistoryEntry(med.copy(schedule = schedule), date, time, status, LocalDateTime.now(clock), _medications.value.first { it.id == medicationId }.stock)
-            } else rest
+            entries.filterNot { it.medication.id == medicationId && it.date == date && it.time == time } + listOfNotNull(entry)
         }
-        logs.update { list ->
-            val rest = list - setOfNotNull(previous)
-            if (status == DoseStatus.Pending) rest else rest + DoseLog(medicationId, date, time, status, snoozedUntil)
-        }
+        logs.update { list -> list - setOfNotNull(previous) + listOfNotNull(log) }
+        persist { saveDose(updated, date, time, log, entry) }
     }
 
     private fun changeStock(medicationId: String, delta: Int) = _medications.update { list ->

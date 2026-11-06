@@ -25,17 +25,17 @@ import pl.agh.meditracker.R
 import androidx.compose.foundation.shape.CircleShape
 
 @Composable
-fun HistoryScreen(onOpenToday: () -> Unit) {
+fun HistoryScreen(onOpenToday: () -> Unit, onOpenSettings: () -> Unit = {}) {
     val model = appViewModel { HistoryViewModel(it.medications) }
     val state by model.state.collectAsStateWithLifecycle()
-    HistoryContent(state, onOpenToday, model::applyFilter)
+    HistoryContent(state, onOpenToday, model::applyFilter, onOpenSettings)
 }
 
 @Composable
-fun HistoryContent(state: HistoryUiState, onOpenToday: () -> Unit, onFilter: (HistoryFilter) -> Unit) {
+fun HistoryContent(state: HistoryUiState, onOpenToday: () -> Unit, onFilter: (HistoryFilter) -> Unit, onOpenSettings: () -> Unit = {}) {
     var filters by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        AppTopBar("Historia", designIcons = true, largeTitle = true, actions = { NotificationsAction(designIcon = true) {} })
+        AppTopBar("Historia", designIcons = true, largeTitle = true, actions = { NotificationsAction(designIcon = true, onClick = onOpenSettings) })
         if (!state.hasHistory) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 72.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 DesignBadge(R.raw.design_history_44)
