@@ -64,6 +64,7 @@ data class DoseLog(
     val time: LocalTime,
     val status: DoseStatus,
     val snoozedUntil: LocalTime? = null,
+    val snoozedUntilAt: LocalDateTime? = null,
 )
 
 // Keep the identity, dose and stock as they were at the time of the event.
@@ -83,6 +84,7 @@ data class Dose(
     val time: LocalTime,
     val status: DoseStatus,
     val snoozedUntil: LocalTime? = null,
+    val snoozedUntilAt: LocalDateTime? = null,
 )
 
 data class CatalogProduct(

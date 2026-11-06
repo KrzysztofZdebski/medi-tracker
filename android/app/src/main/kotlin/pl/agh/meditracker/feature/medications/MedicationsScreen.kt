@@ -27,10 +27,10 @@ import pl.agh.meditracker.ui.components.PrimaryButton
 import pl.agh.meditracker.ui.components.SecondaryButton
 
 @Composable
-fun MedicationsScreen(justAdded: Boolean, onAddMedication: () -> Unit, onOpenToday: () -> Unit, onOpenMedication: (String) -> Unit) {
+fun MedicationsScreen(justAdded: Boolean, onAddMedication: () -> Unit, onOpenToday: () -> Unit, onOpenMedication: (String) -> Unit, onNotifications: () -> Unit) {
     val viewModel = appViewModel { container -> MedicationsViewModel(container.medications) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    MedicationsContent(state, justAdded, onAddMedication, onOpenToday, onOpenMedication)
+    MedicationsContent(state, justAdded, onAddMedication, onOpenToday, onOpenMedication, onNotifications)
 }
 
 @Composable
@@ -39,10 +39,11 @@ fun MedicationsContent(
     justAdded: Boolean,
     onAddMedication: () -> Unit,
     onOpenToday: () -> Unit,
-    onOpenMedication: (String) -> Unit = {},
+    onOpenMedication: (String) -> Unit,
+    onNotifications: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
-        AppTopBar("Moje leki", actions = { NotificationsAction {} })
+        AppTopBar("Moje leki", actions = { NotificationsAction(onClick = onNotifications) })
         when {
             state.loading -> Unit
             state.items.isEmpty() -> EmptyState(

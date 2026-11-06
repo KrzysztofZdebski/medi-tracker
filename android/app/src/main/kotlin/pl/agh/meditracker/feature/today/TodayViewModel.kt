@@ -27,6 +27,7 @@ import java.time.LocalTime
 sealed interface TodayFeedback {
     data class Taken(val dose: Dose, val stockBefore: Int, val stockAfter: Int) : TodayFeedback
     data class Skipped(val dose: Dose) : TodayFeedback
+    data class Snoozed(val dose: Dose, val minutes: Int) : TodayFeedback
 }
 
 sealed interface TodaySheet {
@@ -114,7 +115,7 @@ class TodayViewModel(
     fun snooze(dose: Dose, minutes: Int) {
         val until = LocalTime.now(clock).plusMinutes(minutes.toLong())
         repository.setDoseStatus(dose.medication.id, dose.date, dose.time, DoseStatus.Snoozed, until)
-        dismissSheet()
+        overlay.value = Overlay(feedback = TodayFeedback.Snoozed(dose, minutes))
     }
 
     fun refill(medication: Medication, amount: Int) {

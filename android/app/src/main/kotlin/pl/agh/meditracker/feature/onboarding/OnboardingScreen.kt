@@ -47,7 +47,7 @@ fun OnboardingScreen(onFinished: () -> Unit) {
                         onFinished()
                     }
                 },
-                onSkip = onFinished,
+                onSkip = { viewModel.setReminders(false); onFinished() },
             )
         }
     }

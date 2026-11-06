@@ -57,7 +57,7 @@ class DesignScreensTest {
 
     @Test fun historyEmptyStateOpensToday() {
         var opened = false
-        compose.setContent { MediTrackerTheme { Surface { Box(Modifier.fillMaxSize()) { HistoryContent(HistoryUiState(), { opened = true }, {}) } } } }
+        compose.setContent { MediTrackerTheme { Surface { Box(Modifier.fillMaxSize()) { HistoryContent(HistoryUiState(), { opened = true }, {}, {}) } } } }
         compose.onNodeWithText("Tutaj powstanie\nTwój dziennik").assertIsDisplayed()
         screenshot("history-empty")
         compose.onNodeWithText("Przejdź do dzisiejszych leków").performClick()
@@ -66,7 +66,7 @@ class DesignScreensTest {
 
     @Test fun historyDisplaysRecordedEntriesAndOpensFilters() {
         val entry = HistoryEntry(medication, date, LocalTime.of(8, 0), DoseStatus.Taken, date.atTime(8, 0), 29)
-        compose.setContent { MediTrackerTheme { Surface { HistoryContent(HistoryUiState(listOf(entry), listOf("test" to "Metformina"), hasHistory = true), {}, {}) } } }
+        compose.setContent { MediTrackerTheme { Surface { HistoryContent(HistoryUiState(listOf(entry), listOf("test" to "Metformina"), hasHistory = true), {}, {}, {}) } } }
         compose.onNodeWithText("08:00 · Metformina").assertIsDisplayed()
         screenshot("history")
         compose.onNodeWithContentDescription("Filtruj historię").performClick()

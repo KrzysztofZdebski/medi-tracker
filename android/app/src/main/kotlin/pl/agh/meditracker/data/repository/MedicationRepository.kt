@@ -17,14 +17,22 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.util.UUID
 
-class MedicationRepository(private val clock: Clock = Clock.systemDefaultZone()) {
-    private val _medications = MutableStateFlow<List<Medication>>(emptyList())
+class MedicationRepository(private val clock: Clock = Clock.systemDefaultZone(), private val storage: MedicationStore? = null) {
+    private val restored = storage?.load() ?: MedicationSnapshot()
+    private val _medications = MutableStateFlow(restored.medications)
     val medications: StateFlow<List<Medication>> = _medications
 
-    private val logs = MutableStateFlow<List<DoseLog>>(emptyList())
-    private val _history = MutableStateFlow<List<HistoryEntry>>(emptyList())
+    private val logs = MutableStateFlow(restored.logs)
+    private val _history = MutableStateFlow(restored.history)
     val history: StateFlow<List<HistoryEntry>> = _history
-    private val schedules = mutableMapOf<String, List<Pair<LocalDateTime, Schedule>>>()
+    private val schedules = restored.schedules.toMutableMap()
+    private val _changes = MutableStateFlow(0L)
+    val changes: StateFlow<Long> = _changes
+
+    private fun changed() {
+        storage?.save(MedicationSnapshot(_medications.value, logs.value, _history.value, schedules.toMap()))
+        _changes.update { it + 1 }
+    }
 
     fun update(medication: Medication) {
         val previous = _medications.value.find { it.id == medication.id } ?: return
@@ -32,10 +40,12 @@ class MedicationRepository(private val clock: Clock = Clock.systemDefaultZone())
             schedules[medication.id] = schedules.getValue(medication.id) + (LocalDateTime.now(clock) to medication.schedule)
         }
         _medications.update { list -> list.map { if (it.id == medication.id) medication else it } }
+        changed()
     }
 
     fun remove(id: String) {
         _medications.update { list -> list.filterNot { it.id == id } }
+        changed()
     }
 
     fun dosesFor(date: LocalDate): Flow<List<Dose>> = combine(_medications, logs) { meds, logs ->
@@ -46,20 +56,27 @@ class MedicationRepository(private val clock: Clock = Clock.systemDefaultZone())
                 val schedule = versions.last { !it.first.isAfter(LocalDateTime.of(date, time)) }.second
                 val log = logs.find { it.medicationId == med.id && it.date == date && it.time == time }
                 if (log == null && (!schedule.appliesTo(date) || time !in schedule.times)) null
-                else Dose(med.copy(schedule = schedule), date, time, log?.status ?: DoseStatus.Pending, log?.snoozedUntil)
+                else Dose(med.copy(schedule = schedule), date, time, log?.status ?: DoseStatus.Pending, log?.snoozedUntil, log?.snoozedUntilAt)
             }
         }.sortedBy { it.time }
+    }
+
+    fun snoozedDoses(): List<Dose> = logs.value.filter { it.status == DoseStatus.Snoozed }.mapNotNull { log ->
+        val med = _medications.value.find { it.id == log.medicationId } ?: return@mapNotNull null
+        val schedule = schedules.getValue(med.id).last { !it.first.isAfter(log.date.atTime(log.time)) }.second
+        Dose(med.copy(schedule = schedule), log.date, log.time, log.status, log.snoozedUntil, log.snoozedUntilAt)
     }
 
     fun add(medication: Medication): Medication {
         val saved = medication.copy(id = UUID.randomUUID().toString())
         schedules[saved.id] = listOf(LocalDateTime.MIN to saved.schedule)
         _medications.update { it + saved }
+        changed()
         return saved
     }
 
     fun refill(medicationId: String, amount: Int) {
-        if (amount > 0) changeStock(medicationId, amount)
+        if (amount > 0) { changeStock(medicationId, amount); changed() }
     }
 
     fun setDoseStatus(
@@ -85,8 +102,13 @@ class MedicationRepository(private val clock: Clock = Clock.systemDefaultZone())
         }
         logs.update { list ->
             val rest = list - setOfNotNull(previous)
-            if (status == DoseStatus.Pending) rest else rest + DoseLog(medicationId, date, time, status, snoozedUntil)
+            val now = LocalDateTime.now(clock)
+            val snoozedAt = if (status == DoseStatus.Snoozed && snoozedUntil != null) {
+                now.toLocalDate().atTime(snoozedUntil).let { if (it.isBefore(now)) it.plusDays(1) else it }
+            } else null
+            if (status == DoseStatus.Pending) rest else rest + DoseLog(medicationId, date, time, status, snoozedUntil, snoozedAt)
         }
+        changed()
     }
 
     private fun changeStock(medicationId: String, delta: Int) = _medications.update { list ->

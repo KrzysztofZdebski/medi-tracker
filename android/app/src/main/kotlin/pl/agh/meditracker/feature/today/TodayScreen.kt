@@ -42,11 +42,17 @@ import pl.agh.meditracker.ui.components.DoseCard
 import pl.agh.meditracker.ui.components.EmptyState
 import pl.agh.meditracker.ui.components.NotificationsAction
 import pl.agh.meditracker.ui.components.SecondaryButton
+import pl.agh.meditracker.core.MediTrackerApp
+import androidx.compose.ui.platform.LocalContext
+import pl.agh.meditracker.feature.settings.rememberNotificationAccess
 
 @Composable
-fun TodayScreen(onAddMedication: () -> Unit, onOpenHistory: () -> Unit) {
+fun TodayScreen(onAddMedication: () -> Unit, onOpenHistory: () -> Unit, onNotifications: () -> Unit, onOpenMedication: (String) -> Unit) {
     val viewModel = appViewModel { container -> TodayViewModel(container.medications) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val settings = (LocalContext.current.applicationContext as MediTrackerApp).container.settings
+    val preferences by settings.state.collectAsStateWithLifecycle()
+    val notificationAccess = rememberNotificationAccess()
     val snackbar = remember { SnackbarHostState() }
     val taken = state.feedback as? TodayFeedback.Taken
     LaunchedEffect(taken) {
@@ -55,7 +61,7 @@ fun TodayScreen(onAddMedication: () -> Unit, onOpenHistory: () -> Unit) {
         if (result == SnackbarResult.ActionPerformed) viewModel.undo(taken)
     }
     Scaffold(
-        topBar = { AppTopBar("Dzisiaj", actions = { NotificationsAction {} }) },
+        topBar = { AppTopBar("Dzisiaj", actions = { NotificationsAction(onClick = onNotifications) }) },
         snackbarHost = { AppSnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0),
@@ -64,9 +70,10 @@ fun TodayScreen(onAddMedication: () -> Unit, onOpenHistory: () -> Unit) {
             state = state,
             onAddMedication = onAddMedication,
             onOpenHistory = onOpenHistory,
-            onOpen = viewModel::open,
+            onOpen = { dose -> if (dose.status == DoseStatus.Pending || dose.status == DoseStatus.Snoozed) viewModel.open(dose) else onOpenMedication(dose.medication.id) },
             onTake = viewModel::take,
             modifier = Modifier.padding(padding),
+            remindersEnabled = preferences.remindersEnabled && notificationAccess.allowed,
         )
     }
     TodaySheets(
@@ -78,6 +85,7 @@ fun TodayScreen(onAddMedication: () -> Unit, onOpenHistory: () -> Unit) {
         onOpenRefill = viewModel::openRefill,
         onRefill = viewModel::refill,
         onDismiss = viewModel::dismissSheet,
+        defaultSnoozeMinutes = preferences.snoozeMinutes,
     )
 }
 
@@ -89,6 +97,7 @@ fun TodayContent(
     onOpen: (Dose) -> Unit,
     onTake: (Dose) -> Unit,
     modifier: Modifier = Modifier,
+    remindersEnabled: Boolean = false,
 ) {
     if (state.loading) return
     val next = state.next
@@ -115,6 +124,7 @@ fun TodayContent(
                     "Zapas bez zmian: ${feedback.dose.medication.let { it.unit.format(it.stock) }}. Zapisano w historii.",
                     AlertTone.Info,
                 )
+                is TodayFeedback.Snoozed -> AppAlert("Dawka odroczona", if (remindersEnabled) "Przypomnienie za ${feedback.minutes} minut. Zapas bez zmian." else "Dawka została odroczona. Włącz powiadomienia pod ikoną dzwonka, aby otrzymać przypomnienie.", AlertTone.Info)
                 null -> if (next != null) NextDoseCard(next, state)
             }
         }
@@ -135,7 +145,7 @@ fun TodayContent(
                 details = "${med.strength} · ${med.unit.format(med.schedule.doseQty)}",
                 status = dose.status,
                 onTake = { onTake(dose) },
-                onClick = { if (dose.status == DoseStatus.Pending || dose.status == DoseStatus.Snoozed) onOpen(dose) },
+                onClick = { onOpen(dose) },
                 highlighted = dose == next,
             )
         }
@@ -144,7 +154,7 @@ fun TodayContent(
         } else {
             item {
                 Text(
-                    "Przypomnienia są włączone.",
+                    if (remindersEnabled) "Przypomnienia są włączone." else "Przypomnienia są wyłączone. Włącz je pod ikoną dzwonka.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = muted,
                     textAlign = TextAlign.Center,
@@ -166,7 +176,7 @@ private fun NextDoseCard(dose: Dose, state: TodayUiState) {
                 Text("NAJBLIŻSZA DAWKA", style = MaterialTheme.typography.labelMedium, color = colors.onPrimaryContainer)
             }
             Text(
-                relativeTimeText(state.now, dose.dueTime),
+                if (dose.dueAt.toLocalDate().isAfter(state.date)) "Jutro o ${dose.dueTime.hhmm()}" else relativeTimeText(state.now, dose.dueTime),
                 style = MaterialTheme.typography.headlineMedium,
                 color = colors.onPrimaryContainer,
             )
