@@ -2,6 +2,8 @@ package pl.agh.meditracker.data.catalog
 
 import android.database.sqlite.SQLiteDatabase
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import pl.agh.meditracker.model.CatalogProduct
@@ -15,6 +17,9 @@ import java.util.zip.GZIPInputStream
 private const val BASE = "https://github.com/KrzysztofZdebski/medi-tracker/releases/download/katalog"
 private const val SCHEMA = 1
 
+// Unsupported: nowszy schemat katalogu wymaga nowszej wersji aplikacji
+enum class CatalogSync { Updated, UpToDate, Unsupported, Failed }
+
 class CatalogRepository(private val dir: File) {
     private val db = File(dir, "leki.sqlite")
     private val localVersion = File(dir, "version.json")
@@ -22,21 +27,29 @@ class CatalogRepository(private val dir: File) {
     private fun localStan(): String? =
         if (localVersion.exists()) JSONObject(localVersion.readText()).getString("stan_na_dzien") else null
 
+    // data stanu RPL lokalnego katalogu; null, dopóki pierwsza synchronizacja się nie uda
+    val asOf: String? get() = localStan()?.takeIf { db.exists() }
+
     private fun open(url: String) = (URL(url).openConnection() as HttpURLConnection).apply {
         connectTimeout = 15_000
         readTimeout = 60_000
     }
 
-    suspend fun sync() = withContext(Dispatchers.IO) {
+    // synchronizacja przy starcie i ręczna z ustawień nie mogą pisać naraz do tego samego pliku tymczasowego
+    private val syncing = Mutex()
+
+    suspend fun sync(): CatalogSync = syncing.withLock { download() }
+
+    private suspend fun download(): CatalogSync = withContext(Dispatchers.IO) {
         val vc = open("$BASE/version.json")
-        if (vc.responseCode != 200) return@withContext
+        if (vc.responseCode != 200) return@withContext CatalogSync.Failed
         val versionText = vc.inputStream.use { it.readBytes() }.decodeToString()
         val remote = JSONObject(versionText)
-        if (remote.getInt("schema") != SCHEMA) return@withContext
-        if (db.exists() && remote.getString("stan_na_dzien") == localStan()) return@withContext
+        if (remote.getInt("schema") != SCHEMA) return@withContext CatalogSync.Unsupported
+        if (db.exists() && remote.getString("stan_na_dzien") == localStan()) return@withContext CatalogSync.UpToDate
 
         val gc = open("$BASE/leki.sqlite.gz")
-        if (gc.responseCode != 200) return@withContext
+        if (gc.responseCode != 200) return@withContext CatalogSync.Failed
         val tmp = File(dir, "leki.sqlite.tmp")
         val sha = MessageDigest.getInstance("SHA-256")
         DigestInputStream(GZIPInputStream(gc.inputStream), sha).use { input ->
@@ -45,10 +58,11 @@ class CatalogRepository(private val dir: File) {
         val hash = sha.digest().joinToString("") { "%02x".format(it) }
         if (hash != remote.getString("sha256") || tmp.length() != remote.getLong("size")) {
             tmp.delete()
-            return@withContext
+            return@withContext CatalogSync.Failed
         }
         tmp.renameTo(db)
         localVersion.writeText(versionText)
+        CatalogSync.Updated
     }
 
     suspend fun findByEan(input: String): CatalogProduct? = withContext(Dispatchers.IO) {

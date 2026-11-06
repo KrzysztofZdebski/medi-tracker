@@ -1,0 +1,323 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "f65440852456093c8c0efec41dcbfa46",
+    "entities": [
+      {
+        "tableName": "medication",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`archived_at` TEXT, `id` TEXT NOT NULL, `name` TEXT NOT NULL, `strength` TEXT NOT NULL, `form` TEXT NOT NULL, `unit` TEXT NOT NULL, `manufacturer` TEXT, `ean` TEXT, `package_size` TEXT, `stock` INTEGER NOT NULL, `refill_threshold` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "archivedAt",
+            "columnName": "archived_at",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "medication.id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medication.name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medication.strength",
+            "columnName": "strength",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medication.form",
+            "columnName": "form",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medication.unit",
+            "columnName": "unit",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medication.manufacturer",
+            "columnName": "manufacturer",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "medication.ean",
+            "columnName": "ean",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "medication.packageSize",
+            "columnName": "package_size",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "medication.stock",
+            "columnName": "stock",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medication.refillThreshold",
+            "columnName": "refill_threshold",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "schedule",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`medication_id` TEXT NOT NULL, `version` INTEGER NOT NULL, `valid_from` TEXT, `dose_qty` INTEGER NOT NULL, `days` INTEGER NOT NULL, `times` TEXT NOT NULL, `start_date` TEXT NOT NULL, `end_date` TEXT, PRIMARY KEY(`medication_id`, `version`))",
+        "fields": [
+          {
+            "fieldPath": "medicationId",
+            "columnName": "medication_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "validFrom",
+            "columnName": "valid_from",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "schedule.doseQty",
+            "columnName": "dose_qty",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schedule.days",
+            "columnName": "days",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schedule.times",
+            "columnName": "times",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schedule.startDate",
+            "columnName": "start_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schedule.endDate",
+            "columnName": "end_date",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "medication_id",
+            "version"
+          ]
+        }
+      },
+      {
+        "tableName": "dose_log",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`medication_id` TEXT NOT NULL, `scheduled_date` TEXT NOT NULL, `scheduled_time` TEXT NOT NULL, `status` TEXT NOT NULL, `snoozed_until` TEXT, PRIMARY KEY(`medication_id`, `scheduled_date`, `scheduled_time`))",
+        "fields": [
+          {
+            "fieldPath": "medicationId",
+            "columnName": "medication_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "scheduled_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time",
+            "columnName": "scheduled_time",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snoozedUntil",
+            "columnName": "snoozed_until",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "medication_id",
+            "scheduled_date",
+            "scheduled_time"
+          ]
+        }
+      },
+      {
+        "tableName": "history_entry",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`rowId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `scheduled_date` TEXT NOT NULL, `scheduled_time` TEXT NOT NULL, `status` TEXT NOT NULL, `recorded_at` TEXT NOT NULL, `stock_after` INTEGER NOT NULL, `med_id` TEXT NOT NULL, `med_name` TEXT NOT NULL, `med_strength` TEXT NOT NULL, `med_form` TEXT NOT NULL, `med_unit` TEXT NOT NULL, `med_manufacturer` TEXT, `med_ean` TEXT, `med_package_size` TEXT, `med_stock` INTEGER NOT NULL, `med_refill_threshold` INTEGER NOT NULL, `sch_dose_qty` INTEGER NOT NULL, `sch_days` INTEGER NOT NULL, `sch_times` TEXT NOT NULL, `sch_start_date` TEXT NOT NULL, `sch_end_date` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "rowId",
+            "columnName": "rowId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "scheduled_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "time",
+            "columnName": "scheduled_time",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordedAt",
+            "columnName": "recorded_at",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stockAfter",
+            "columnName": "stock_after",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medication.id",
+            "columnName": "med_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medication.name",
+            "columnName": "med_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medication.strength",
+            "columnName": "med_strength",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medication.form",
+            "columnName": "med_form",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medication.unit",
+            "columnName": "med_unit",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medication.manufacturer",
+            "columnName": "med_manufacturer",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "medication.ean",
+            "columnName": "med_ean",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "medication.packageSize",
+            "columnName": "med_package_size",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "medication.stock",
+            "columnName": "med_stock",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medication.refillThreshold",
+            "columnName": "med_refill_threshold",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schedule.doseQty",
+            "columnName": "sch_dose_qty",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schedule.days",
+            "columnName": "sch_days",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schedule.times",
+            "columnName": "sch_times",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schedule.startDate",
+            "columnName": "sch_start_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schedule.endDate",
+            "columnName": "sch_end_date",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "rowId"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f65440852456093c8c0efec41dcbfa46')"
+    ]
+  }
+}

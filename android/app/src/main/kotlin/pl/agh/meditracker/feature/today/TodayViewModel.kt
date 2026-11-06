@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -11,6 +12,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
@@ -45,6 +47,7 @@ data class TodayUiState(
     val doses: List<Dose> = emptyList(),
     val feedback: TodayFeedback? = null,
     val sheet: TodaySheet? = null,
+    val remindersEnabled: Boolean = true,
 ) {
     val next: Dose? get() = nextDose(doses)
 }
@@ -55,6 +58,7 @@ private data class Overlay(val feedback: TodayFeedback? = null, val sheet: Today
 class TodayViewModel(
     private val repository: MedicationRepository,
     private val clock: Clock = Clock.systemDefaultZone(),
+    remindersEnabled: Flow<Boolean> = flowOf(true),
 ) : ViewModel() {
     private val overlay = MutableStateFlow(Overlay())
 
@@ -68,7 +72,7 @@ class TodayViewModel(
 
     private val doses = ticker.map { it.toLocalDate() }.distinctUntilChanged().flatMapLatest { repository.dosesFor(it) }
 
-    val uiState: StateFlow<TodayUiState> = combine(ticker, repository.medications, doses, overlay) { now, meds, doses, overlay ->
+    val uiState: StateFlow<TodayUiState> = combine(ticker, repository.medications, doses, overlay, remindersEnabled) { now, meds, doses, overlay, reminders ->
         TodayUiState(
             loading = false,
             date = now.toLocalDate(),
@@ -77,6 +81,7 @@ class TodayViewModel(
             doses = doses,
             feedback = overlay.feedback,
             sheet = overlay.sheet,
+            remindersEnabled = reminders,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodayUiState())
 
