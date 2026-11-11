@@ -4,19 +4,23 @@
 set -eu
 
 CATALOG_DIR=${CATALOG_DIR:-/catalog}
-RPL_URL=https://rejestry.ezdrowie.gov.pl/api/rpl/medicinal-products/public-pl-report/6.0.0/overall.xml
+RPL_URL=${RPL_URL:-https://rejestry.ezdrowie.gov.pl/api/rpl/medicinal-products/public-pl-report/6.0.0/overall.xml}
 
+# Every step must succeed or the function fails: `if build` disables `set -e`,
+# so failures are propagated explicitly. Publishing happens only after all steps passed.
 build() {
-  python test_build.py
-  curl -fsSL --retry 5 --retry-delay 30 --max-time 600 -o /tmp/overall.xml "$RPL_URL"
+  python test_build.py || return 1
+  curl -fsSL --retry 5 --retry-delay 30 --max-time 600 -o /tmp/overall.xml "$RPL_URL" || return 1
   rm -rf /tmp/out
-  python build.py /tmp/overall.xml /tmp/out
+  python build.py /tmp/overall.xml /tmp/out || return 1
+  [ -s /tmp/out/leki.sqlite.gz ] && [ -s /tmp/out/version.json ] || return 1
   # database first, then version.json: clients never see a version pointing at an old file
-  mv /tmp/out/leki.sqlite.gz "$CATALOG_DIR/.leki.tmp"
-  mv "$CATALOG_DIR/.leki.tmp" "$CATALOG_DIR/leki.sqlite.gz"
-  mv /tmp/out/version.json "$CATALOG_DIR/.version.tmp"
-  mv "$CATALOG_DIR/.version.tmp" "$CATALOG_DIR/version.json"
+  mv /tmp/out/leki.sqlite.gz "$CATALOG_DIR/.leki.tmp" || return 1
+  mv "$CATALOG_DIR/.leki.tmp" "$CATALOG_DIR/leki.sqlite.gz" || return 1
+  mv /tmp/out/version.json "$CATALOG_DIR/.version.tmp" || return 1
+  mv "$CATALOG_DIR/.version.tmp" "$CATALOG_DIR/version.json" || return 1
   rm -f /tmp/overall.xml
+  return 0
 }
 
 run_build() {
