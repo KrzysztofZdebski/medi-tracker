@@ -1,12 +1,14 @@
 pub mod account;
 pub mod backup;
 pub mod login;
+pub mod password;
 pub mod register;
+pub mod reset;
 
 use axum::{body::Bytes, Router};
 use base64::{engine::general_purpose::STANDARD, Engine};
-use serde::de::DeserializeOwned;
-use sqlx::SqliteConnection;
+use serde::{de::DeserializeOwned, Deserialize};
+use sqlx::{Row, SqliteConnection};
 
 use crate::{
     error::ApiError,
@@ -16,12 +18,15 @@ use crate::{
 
 pub const CODE_TTL_SECS: i64 = 15 * 60;
 pub const SESSION_TTL_SECS: i64 = 90 * 24 * 3600;
+pub const MAX_CODE_ATTEMPTS: i64 = 5;
 
 pub fn router() -> Router<AppState> {
     register::router()
         .merge(login::router())
         .merge(backup::router())
         .merge(account::router())
+        .merge(password::router())
+        .merge(reset::router())
 }
 
 /// Parses a JSON body, mapping every failure (malformed, missing fields) to `invalid_input`.
@@ -77,9 +82,80 @@ pub async fn issue_code(
     .bind(now + CODE_TTL_SECS)
     .execute(&state.db)
     .await?;
-    let body = format!("Twój kod: {code}. Wygasa za 15 minut.");
-    send_mail_detached(state, email, "mediTracker: kod potwierdzający", body);
+    let (subject, body) = match purpose {
+        "reset" => (
+            "mediTracker: kod resetowania hasła",
+            format!(
+                "Twój kod resetowania hasła: {code}. Wygasa za 15 minut. \
+                 Jeśli to nie Ty, zignoruj tę wiadomość."
+            ),
+        ),
+        _ => (
+            "mediTracker: kod potwierdzający",
+            format!("Twój kod: {code}. Wygasa za 15 minut."),
+        ),
+    };
+    send_mail_detached(state, email, subject, body);
     Ok(())
+}
+
+/// Claims one of the (user, purpose) code's attempts atomically and returns its stored hash.
+/// Claiming before comparing means concurrent guesses can't exceed the cap. A missing,
+/// expired or exhausted code is `invalid_code`.
+pub async fn claim_code_attempt(
+    state: &AppState,
+    user_id: &str,
+    purpose: &str,
+    now: i64,
+) -> Result<Vec<u8>, ApiError> {
+    let row = sqlx::query(
+        "UPDATE email_codes SET attempts = attempts + 1
+         WHERE user_id = ? AND purpose = ? AND attempts < ? AND expires_at >= ?
+         RETURNING code_hash",
+    )
+    .bind(user_id)
+    .bind(purpose)
+    .bind(MAX_CODE_ATTEMPTS)
+    .bind(now)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::InvalidCode)?;
+    Ok(row.get("code_hash"))
+}
+
+#[derive(Deserialize)]
+pub struct Kdf {
+    m: u32,
+    t: u32,
+    p: u32,
+}
+
+/// New password-slot material shared by change-password and reset, validated.
+pub struct NewCredentials {
+    pub salt_pw: Vec<u8>,
+    pub kdf: String,
+    pub auth_hash: Vec<u8>,
+    pub slot1: Vec<u8>,
+}
+
+impl NewCredentials {
+    pub fn parse(kdf: &Kdf, salt_pw: &str, auth_key: &str, slot1: &str) -> Result<Self, ApiError> {
+        if kdf.m == 0 || kdf.t == 0 || kdf.p == 0 {
+            return Err(ApiError::InvalidInput);
+        }
+        let salt_pw = decode_b64(salt_pw)?;
+        let auth_key = decode_b64(auth_key)?;
+        let slot1 = decode_b64(slot1)?;
+        if salt_pw.len() != 16 || auth_key.is_empty() || slot1.is_empty() {
+            return Err(ApiError::InvalidInput);
+        }
+        Ok(Self {
+            salt_pw,
+            kdf: serde_json::json!({"m": kdf.m, "t": kdf.t, "p": kdf.p}).to_string(),
+            auth_hash: hash_secret(&auth_key).to_vec(),
+            slot1,
+        })
+    }
 }
 
 /// Sends a mail off the request path, so response timing doesn't reveal whether a mail was sent.

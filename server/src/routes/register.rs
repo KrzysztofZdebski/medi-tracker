@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use sqlx::Row;
 
 use super::{
-    create_session, decode_b64, issue_code, normalize_email, parse_json, send_mail_detached,
+    claim_code_attempt, create_session, decode_b64, issue_code, normalize_email, parse_json, send_mail_detached,
     valid_email,
 };
 use crate::{
@@ -14,7 +14,6 @@ use crate::{
 };
 
 const PURPOSE: &str = "verify";
-const MAX_ATTEMPTS: i64 = 5;
 const UNVERIFIED_TTL_SECS: i64 = 24 * 3600;
 
 pub fn router() -> Router<AppState> {
@@ -158,19 +157,7 @@ async fn verify(State(state): State<AppState>, body: Bytes) -> Result<Json<Value
     let auth_hash: Vec<u8> = user.get("auth_hash");
 
     // Claim an attempt atomically before comparing, so concurrent guesses can't exceed the cap.
-    let claimed = sqlx::query(
-        "UPDATE email_codes SET attempts = attempts + 1
-         WHERE user_id = ? AND purpose = ? AND attempts < ? AND expires_at >= ?
-         RETURNING code_hash",
-    )
-    .bind(&user_id)
-    .bind(PURPOSE)
-    .bind(MAX_ATTEMPTS)
-    .bind(now)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(ApiError::InvalidCode)?;
-    let code_hash: Vec<u8> = claimed.get("code_hash");
+    let code_hash = claim_code_attempt(&state, &user_id, PURPOSE, now).await?;
 
     // Both checks always run; the key binding stops a re-registrant from reusing the victim's code.
     let code_ok = ct_eq(&hmac_code(&state.config.server_secret, req.code.trim()), &code_hash);
