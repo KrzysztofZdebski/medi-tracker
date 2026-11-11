@@ -27,6 +27,9 @@ android {
     }
 
     testOptions.unitTests.isIncludeAndroidResources = true
+
+    // bcprov i jspecify mają ten sam manifest OSGi (bez znaczenia na Androidzie)
+    packaging.resources.excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
 }
 
 // schemat user.db w repo, żeby kolejne wersje bazy miały z czym robić migracje
@@ -55,6 +58,7 @@ dependencies {
     implementation("com.caverock:androidsvg-aar:1.4")
     implementation("androidx.room:room-runtime:2.7.2")
     ksp("androidx.room:room-compiler:2.7.2")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.80")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("org.robolectric:robolectric:4.14.1")
