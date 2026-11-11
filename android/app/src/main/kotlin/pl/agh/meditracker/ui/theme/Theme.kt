@@ -5,12 +5,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import pl.agh.meditracker.data.settings.AppTheme
 
 val Primary = Color(0xFF176B5B)
 val PrimaryContainer = Color(0xFFD5EDE4)
@@ -49,6 +52,17 @@ private val colors = lightColorScheme(
     errorContainer = ErrorContainer,
 )
 
+private val darkColors = darkColorScheme(
+    primary = Color(0xFF95D5BE), onPrimary = Color(0xFF00382B),
+    primaryContainer = Color(0xFF185142), onPrimaryContainer = Color(0xFFD5EDE4),
+    secondary = Color(0xFFB2CCC0), background = Color(0xFF101A16), onBackground = Color(0xFFE0EAE3),
+    surface = Color(0xFF18241E), onSurface = Color(0xFFE0EAE3),
+    surfaceContainer = Color(0xFF223029), surfaceContainerLow = Color(0xFF18241E),
+    surfaceContainerHigh = Color(0xFF29382F), surfaceContainerHighest = Color(0xFF304137),
+    onSurfaceVariant = Color(0xFFBACCC0), outline = Color(0xFF8B9C90), outlineVariant = Color(0xFF405247),
+    error = Color(0xFFFFB4AB), errorContainer = Color(0xFF642520),
+)
+
 private fun style(size: Int, line: Int, weight: FontWeight = FontWeight.Normal) =
     TextStyle(fontSize = size.sp, lineHeight = line.sp, fontWeight = weight)
 
@@ -72,6 +86,7 @@ private val shapes = Shapes(
 )
 
 @Composable
-fun MediTrackerTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = colors, typography = typography, shapes = shapes, content = content)
+fun MediTrackerTheme(theme: AppTheme = AppTheme.Light, content: @Composable () -> Unit) {
+    val dark = when (theme) { AppTheme.System -> isSystemInDarkTheme(); AppTheme.Dark -> true; AppTheme.Light -> false }
+    MaterialTheme(colorScheme = if (dark) darkColors else colors, typography = typography, shapes = shapes, content = content)
 }

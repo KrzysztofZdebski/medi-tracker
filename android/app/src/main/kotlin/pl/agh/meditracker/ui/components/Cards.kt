@@ -38,7 +38,7 @@ fun DoseCard(
     status: DoseStatus,
     onTake: () -> Unit,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit = {},
+    onClick: () -> Unit,
     highlighted: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -62,7 +62,7 @@ fun DoseCard(
             if (status == DoseStatus.Pending) {
                 DoseAction("Przyjmij", Icons.Outlined.Check, colors.primary, colors.onPrimary, onTake)
             } else {
-                DoseAction(style.label, style.icon, style.container, style.content, null)
+                DoseAction(style.label, style.icon, style.container, style.content, onClick)
             }
         }
     }

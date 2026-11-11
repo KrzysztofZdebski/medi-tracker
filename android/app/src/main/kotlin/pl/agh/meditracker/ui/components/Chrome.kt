@@ -65,7 +65,7 @@ fun AppTopBar(
         navigationIcon = {
             when {
                 onBack != null -> IconButton(onClick = onBack) {
-                    if (designIcons) DesignIcon(R.raw.design_back_24, 24.dp, "Wstecz")
+                    if (designIcons) DesignIcon(R.raw.design_back_24, 24.dp, "Wstecz", tint = MaterialTheme.colorScheme.primary)
                     else Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Wstecz")
                 }
                 onClose != null -> IconButton(onClick = onClose) {
@@ -85,7 +85,7 @@ fun AppTopBar(
 @Composable
 fun NotificationsAction(designIcon: Boolean = false, onClick: () -> Unit) {
     IconButton(onClick = onClick) {
-        if (designIcon) DesignIcon(R.raw.design_bell_24, 24.dp, "Powiadomienia")
+        if (designIcon) DesignIcon(R.raw.design_bell_24, 24.dp, "Powiadomienia", tint = MaterialTheme.colorScheme.primary)
         else Icon(Icons.Outlined.Notifications, contentDescription = "Powiadomienia")
     }
 }
@@ -106,7 +106,7 @@ fun AppBottomBar(selectedIndex: Int, modifier: Modifier = Modifier, designIcons:
             NavigationBarItem(
                 selected = index == selectedIndex,
                 onClick = { onSelect(index) },
-                icon = { if (designIcons) DesignIcon(resources[index], 24.dp) else Icon(icon, contentDescription = null) },
+                icon = { if (designIcons) DesignIcon(resources[index], 24.dp, tint = if (selectedIndex == index) colors.onPrimaryContainer else colors.onSurfaceVariant) else Icon(icon, contentDescription = null) },
                 label = { Text(label, style = MaterialTheme.typography.labelMedium) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = colors.onPrimaryContainer,
@@ -225,8 +225,8 @@ private fun ComponentsPreview() {
             NumberStepper("1", {}, {})
             TimeChip("08:00", {}, onEdit = {})
             DaySelector(setOf(DayOfWeek.MONDAY, DayOfWeek.FRIDAY), {})
-            DoseCard("08:00", "Metformina", "500 mg · 1 tabletka", DoseStatus.Pending, {})
-            DoseCard("20:00", "Metformina", "500 mg · 1 tabletka", DoseStatus.Taken, {})
+            DoseCard("08:00", "Metformina", "500 mg · 1 tabletka", DoseStatus.Pending, {}, onClick = {})
+            DoseCard("20:00", "Metformina", "500 mg · 1 tabletka", DoseStatus.Taken, {}, onClick = {})
             MedicationCard(
                 "Metformina", "500 mg · tabletki", "Codziennie · 08:00 i 20:00",
                 "5 tabletek", StockLevel.Low, 0.15f, "Około 2 dni stosowania", {},

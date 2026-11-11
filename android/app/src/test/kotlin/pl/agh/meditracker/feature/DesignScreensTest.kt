@@ -25,11 +25,8 @@ import pl.agh.meditracker.feature.addmedication.*
 import pl.agh.meditracker.feature.history.*
 import pl.agh.meditracker.feature.medicationdetails.MedicationDetailsContent
 import pl.agh.meditracker.feature.scanner.ScannerFlow
-import pl.agh.meditracker.feature.settings.SettingsContent
-import pl.agh.meditracker.feature.settings.SettingsUiState
 import pl.agh.meditracker.feature.today.TodayContent
 import pl.agh.meditracker.feature.today.TodayUiState
-import pl.agh.meditracker.data.catalog.CatalogSync
 import pl.agh.meditracker.model.*
 import pl.agh.meditracker.ui.theme.MediTrackerTheme
 import java.io.File
@@ -62,7 +59,7 @@ class DesignScreensTest {
 
     @Test fun historyEmptyStateOpensToday() {
         var opened = false
-        compose.setContent { MediTrackerTheme { Surface { Box(Modifier.fillMaxSize()) { HistoryContent(HistoryUiState(), { opened = true }, {}) } } } }
+        compose.setContent { MediTrackerTheme { Surface { Box(Modifier.fillMaxSize()) { HistoryContent(HistoryUiState(), { opened = true }, {}, {}) } } } }
         compose.onNodeWithText("Tutaj powstanie\nTwój dziennik").assertIsDisplayed()
         screenshot("history-empty")
         compose.onNodeWithText("Przejdź do dzisiejszych leków").performClick()
@@ -71,7 +68,7 @@ class DesignScreensTest {
 
     @Test fun historyDisplaysRecordedEntriesAndOpensFilters() {
         val entry = HistoryEntry(medication, date, LocalTime.of(8, 0), DoseStatus.Taken, date.atTime(8, 0), 29)
-        compose.setContent { MediTrackerTheme { Surface { HistoryContent(HistoryUiState(listOf(entry), listOf("test" to "Metformina"), hasHistory = true), {}, {}) } } }
+        compose.setContent { MediTrackerTheme { Surface { HistoryContent(HistoryUiState(listOf(entry), listOf("test" to "Metformina"), hasHistory = true), {}, {}, {}) } } }
         compose.onNodeWithText("08:00 · Metformina").assertIsDisplayed()
         screenshot("history")
         compose.onNodeWithContentDescription("Filtruj historię").performClick()
@@ -138,48 +135,10 @@ class DesignScreensTest {
         assertEquals("Metformina", repository.medications.value.single().name)
     }
 
-    @Test fun settingsTogglesRemindersAndChecksCatalog() {
-        var reminders: Boolean? = null
-        var synced = false
-        compose.setContent {
-            MediTrackerTheme {
-                Surface {
-                    SettingsContent(
-                        SettingsUiState(remindersEnabled = false, catalogAsOf = "2026-10-16", syncResult = CatalogSync.UpToDate, version = "0.1"),
-                        { reminders = it }, {}, {}, { synced = true },
-                    )
-                }
-            }
-        }
-        compose.onNodeWithText("Stan na 2026-10-16").assertIsDisplayed()
-        compose.onNodeWithText("Katalog jest aktualny").assertIsDisplayed()
-        screenshot("settings")
-        compose.onNodeWithContentDescription("Powiadomienia o dawkach").performClick()
-        assertEquals(true, reminders)
-        compose.onNodeWithText("Sprawdź aktualizacje").performScrollTo().performClick()
-        assertEquals(true, synced)
-    }
-
-    @Test fun settingsExplainsBlockedNotifications() {
-        var opened = false
-        compose.setContent {
-            MediTrackerTheme {
-                Surface {
-                    SettingsContent(SettingsUiState(remindersEnabled = true, notificationsAllowed = false), {}, { opened = true }, {}, {})
-                }
-            }
-        }
-        compose.onNodeWithText("Powiadomienia są zablokowane").assertIsDisplayed()
-        compose.onNodeWithText("Katalog nie został jeszcze pobrany").assertExists()
-        screenshot("settings-blocked")
-        compose.onNodeWithText("Otwórz ustawienia powiadomień").performClick()
-        assertEquals(true, opened)
-    }
-
     @Test fun todayTellsWhenRemindersAreOff() {
         val dose = Dose(medication, date, LocalTime.of(23, 59), DoseStatus.Pending)
-        val state = TodayUiState(loading = false, date = date, now = LocalTime.of(7, 0), hasMedications = true, doses = listOf(dose), remindersEnabled = false)
-        compose.setContent { MediTrackerTheme { Surface { TodayContent(state, {}, {}, {}, {}) } } }
-        compose.onNodeWithText("Przypomnienia są wyłączone. Włączysz je w Ustawieniach.").performScrollTo().assertIsDisplayed()
+        val state = TodayUiState(loading = false, date = date, now = LocalTime.of(7, 0), hasMedications = true, doses = listOf(dose))
+        compose.setContent { MediTrackerTheme { Surface { TodayContent(state, {}, {}, {}, {}, remindersEnabled = false) } } }
+        compose.onNodeWithText("Przypomnienia są wyłączone. Włącz je pod ikoną dzwonka.").performScrollTo().assertIsDisplayed()
     }
 }

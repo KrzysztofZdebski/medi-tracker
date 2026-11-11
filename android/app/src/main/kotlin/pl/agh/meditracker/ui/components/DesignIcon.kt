@@ -13,6 +13,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -21,9 +23,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.caverock.androidsvg.SVG
 
-/** Original SVG icons from the supplied MedTracker design exports. */
+/** Original SVG icons from the supplied mediTracker design exports. */
 @Composable
-fun DesignIcon(@RawRes resource: Int, size: Dp, description: String? = null, modifier: Modifier = Modifier) {
+fun DesignIcon(@RawRes resource: Int, size: Dp, description: String? = null, modifier: Modifier = Modifier, tint: Color? = null) {
     val context = LocalContext.current
     val pixels = with(LocalDensity.current) { size.roundToPx() }.coerceAtLeast(1)
     val bitmap = remember(resource, pixels) {
@@ -34,12 +36,12 @@ fun DesignIcon(@RawRes resource: Int, size: Dp, description: String? = null, mod
             svg.renderToCanvas(canvas)
         }.asImageBitmap()
     }
-    Image(bitmap, description, modifier.size(size))
+    Image(bitmap, description, modifier.size(size), colorFilter = tint?.let { ColorFilter.tint(it) })
 }
 
 @Composable
 fun DesignBadge(@RawRes resource: Int, size: Dp = 88.dp, iconSize: Dp = 44.dp) {
     Box(Modifier.size(size).clip(RoundedCornerShape(if (size >= 72.dp) 24.dp else 16.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
-        DesignIcon(resource, iconSize)
+        DesignIcon(resource, iconSize, tint = MaterialTheme.colorScheme.primary)
     }
 }

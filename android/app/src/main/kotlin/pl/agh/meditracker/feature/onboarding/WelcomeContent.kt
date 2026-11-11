@@ -33,7 +33,7 @@ private val features = listOf(
 @Composable
 fun WelcomeContent(onStart: () -> Unit) {
     OnboardingLayout(
-        title = "MedTracker",
+        title = "mediTracker",
         icon = Icons.Outlined.Medication,
         headline = "Twoje leki.\nSpokojniejszy dzień.",
         body = "Zaplanuj przyjmowanie leków, pilnuj zapasu i miej swój dziennik zawsze pod ręką.",

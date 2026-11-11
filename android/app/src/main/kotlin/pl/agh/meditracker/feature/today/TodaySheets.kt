@@ -44,14 +44,26 @@ fun TodaySheets(
     onOpenRefill: (Medication) -> Unit,
     onRefill: (Medication, Int) -> Unit,
     onDismiss: () -> Unit,
+    defaultSnoozeMinutes: Int = 15,
 ) {
-    when (sheet) {
-        is TodaySheet.Confirm -> ConfirmSheet(sheet.dose, onTake, onSkip, onOpenSnooze, onDismiss)
-        is TodaySheet.Snooze -> SnoozeSheet(sheet.dose, onSnooze, onDismiss)
-        is TodaySheet.LowStock -> LowStockSheet(sheet.medication, onOpenRefill, onDismiss)
-        is TodaySheet.NoStock -> NoStockSheet(sheet.medication, onOpenRefill, onDismiss)
-        is TodaySheet.Refill -> RefillSheet(sheet.medication, onRefill, onDismiss)
-        null -> Unit
+    if (sheet == null) return
+    val title = when (sheet) {
+        is TodaySheet.Confirm -> "Czas na lek"
+        is TodaySheet.Snooze -> "Przypomnij później"
+        is TodaySheet.LowStock -> "Kończy Ci się ${sheet.medication.name}"
+        is TodaySheet.NoStock -> "Brak zapasu"
+        is TodaySheet.Refill -> "Uzupełnij zapas"
+    }
+    // Keep one modal while switching its content. Replacing dialogs could dismiss
+    // the new sheet through the outgoing dialog's asynchronous dismiss callback.
+    AppBottomSheet(onDismiss, title = title) {
+        when (sheet) {
+            is TodaySheet.Confirm -> ConfirmSheet(sheet.dose, onTake, onSkip, onOpenSnooze, onDismiss)
+            is TodaySheet.Snooze -> SnoozeSheet(sheet.dose, onSnooze, onDismiss, defaultSnoozeMinutes)
+            is TodaySheet.LowStock -> LowStockSheet(sheet.medication, onOpenRefill, onDismiss)
+            is TodaySheet.NoStock -> NoStockSheet(sheet.medication, onOpenRefill, onDismiss)
+            is TodaySheet.Refill -> RefillSheet(sheet.medication, onRefill, onDismiss)
+        }
     }
 }
 
@@ -70,39 +82,35 @@ private fun ConfirmSheet(
 ) {
     val med = dose.medication
     val qty = med.schedule.doseQty
-    AppBottomSheet(onDismiss, title = "Czas na lek") {
-        Text("${med.name} ${med.strength}", style = MaterialTheme.typography.titleMedium)
-        Muted("${med.unit.format(qty)} · planowana godzina ${dose.time.hhmm()}")
-        Text(
-            "Po potwierdzeniu zapas zmieni się z ${med.stock} na ${med.unit.format((med.stock - qty).coerceAtLeast(0))}.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        PrimaryButton("Przyjęto", { onTake(dose) })
-        SecondaryButton("Pomiń dawkę", { onSkip(dose) })
-        AppTextButton("Przypomnij później", { onOpenSnooze(dose) }, Modifier.fillMaxWidth())
-        AppTextButton("Anuluj", onDismiss, Modifier.fillMaxWidth())
-    }
+    Text("${med.name} ${med.strength}", style = MaterialTheme.typography.titleMedium)
+    Muted("${med.unit.format(qty)} · planowana godzina ${dose.time.hhmm()}")
+    Text(
+        "Po potwierdzeniu zapas zmieni się z ${med.stock} na ${med.unit.format((med.stock - qty).coerceAtLeast(0))}.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    PrimaryButton("Przyjęto", { onTake(dose) })
+    SecondaryButton("Pomiń dawkę", { onSkip(dose) })
+    AppTextButton("Przypomnij później", { onOpenSnooze(dose) }, Modifier.fillMaxWidth())
+    AppTextButton("Anuluj", onDismiss, Modifier.fillMaxWidth())
 }
 
 @Composable
-private fun SnoozeSheet(dose: Dose, onSnooze: (Dose, Int) -> Unit, onDismiss: () -> Unit) {
-    var minutes by remember { mutableIntStateOf(15) }
-    AppBottomSheet(onDismiss, title = "Przypomnij później") {
-        Muted("Kiedy przypomnieć o tej dawce?")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            snoozeOptions.forEach { option ->
-                SnoozeChip("$option min", option == minutes, { minutes = option }, Modifier.weight(1f))
-            }
+private fun SnoozeSheet(dose: Dose, onSnooze: (Dose, Int) -> Unit, onDismiss: () -> Unit, defaultMinutes: Int) {
+    var minutes by remember { mutableIntStateOf(defaultMinutes) }
+    Muted("Kiedy przypomnieć o tej dawce?")
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        snoozeOptions.forEach { option ->
+            SnoozeChip("$option min", option == minutes, { minutes = option }, Modifier.weight(1f))
         }
-        Text(
-            "Dawka pozostanie nieprzyjęta. Zapas się nie zmieni.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        PrimaryButton("Zapisz · za $minutes minut", { onSnooze(dose, minutes) })
-        SecondaryButton("Anuluj", onDismiss)
     }
+    Text(
+        "Dawka pozostanie nieprzyjęta. Zapas się nie zmieni.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    PrimaryButton("Zapisz · za $minutes minut", { onSnooze(dose, minutes) })
+    SecondaryButton("Anuluj", onDismiss)
 }
 
 @Composable
@@ -121,39 +129,33 @@ private fun SnoozeChip(text: String, selected: Boolean, onClick: () -> Unit, mod
 
 @Composable
 private fun LowStockSheet(med: Medication, onOpenRefill: (Medication) -> Unit, onDismiss: () -> Unit) {
-    AppBottomSheet(onDismiss, title = "Kończy Ci się ${med.name}") {
-        IconBadge(Icons.Outlined.WarningAmber, size = 56.dp, containerColor = WarningContainer, contentColor = Warning)
-        Text("Pozostało ${med.unit.format(med.stock)}", style = MaterialTheme.typography.titleMedium)
-        med.daysLeft?.let { Muted("To około ${daysText(it)} stosowania według Twojego harmonogramu.") }
-        PrimaryButton("Uzupełnij zapas", { onOpenRefill(med) })
-        SecondaryButton("Przypomnij później", onDismiss)
-    }
+    IconBadge(Icons.Outlined.WarningAmber, size = 56.dp, containerColor = WarningContainer, contentColor = Warning)
+    Text("Pozostało ${med.unit.format(med.stock)}", style = MaterialTheme.typography.titleMedium)
+    med.daysLeft?.let { Muted("To około ${daysText(it)} stosowania według Twojego harmonogramu.") }
+    PrimaryButton("Uzupełnij zapas", { onOpenRefill(med) })
+    SecondaryButton("Zamknij", onDismiss)
 }
 
 @Composable
 private fun NoStockSheet(med: Medication, onOpenRefill: (Medication) -> Unit, onDismiss: () -> Unit) {
     val qty = med.schedule.doseQty
     val need = if (qty == 1) "Potrzebna ${med.unit.format(qty)}" else "Potrzebne: ${med.unit.format(qty)}"
-    AppBottomSheet(onDismiss, title = "Brak zapasu") {
-        AppAlert("Nie masz wystarczającego zapasu", "$need. Zapisany stan: ${med.unit.format(med.stock)}.", AlertTone.Error)
-        Muted("Uzupełnij zapisany stan, jeśli masz nowe opakowanie.")
-        PrimaryButton("Uzupełnij zapas", { onOpenRefill(med) })
-        SecondaryButton("Wróć", onDismiss)
-    }
+    AppAlert("Nie masz wystarczającego zapasu", "$need. Zapisany stan: ${med.unit.format(med.stock)}.", AlertTone.Error)
+    Muted("Uzupełnij zapisany stan, jeśli masz nowe opakowanie.")
+    PrimaryButton("Uzupełnij zapas", { onOpenRefill(med) })
+    SecondaryButton("Wróć", onDismiss)
 }
 
 @Composable
 private fun RefillSheet(med: Medication, onRefill: (Medication, Int) -> Unit, onDismiss: () -> Unit) {
     var amount by remember { mutableIntStateOf(med.packageSize?.filter(Char::isDigit)?.toIntOrNull() ?: 30) }
-    AppBottomSheet(onDismiss, title = "Uzupełnij zapas") {
-        Muted("Ile ${med.unit.many} dodajesz do zapasu?")
-        NumberStepper(amount.toString(), { amount = (amount - 1).coerceAtLeast(1) }, { amount++ })
-        Text(
-            "Nowy stan: ${med.unit.format(med.stock + amount)}",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        PrimaryButton("Zapisz", { onRefill(med, amount) })
-        SecondaryButton("Anuluj", onDismiss)
-    }
+    Muted("Ile ${med.unit.many} dodajesz do zapasu?")
+    NumberStepper(amount.toString(), { amount = (amount - 1).coerceAtLeast(1) }, { amount++ })
+    Text(
+        "Nowy stan: ${med.unit.format(med.stock + amount)}",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    PrimaryButton("Zapisz", { onRefill(med, amount) })
+    SecondaryButton("Anuluj", onDismiss)
 }

@@ -1,6 +1,7 @@
 package pl.agh.meditracker.reminder
 
 import android.app.AlarmManager
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -47,12 +48,18 @@ class ReminderScheduler(
         val doses = today.flatMapLatest { day ->
             combine(repository.dosesFor(day), repository.dosesFor(day.plusDays(1))) { a, b -> a + b }
         }
-        combine(settings.remindersFlow, doses, refreshes) { enabled, doses, _ -> enabled to doses }
-            .collect { (enabled, doses) ->
+        combine(settings.remindersFlow, doses, repository.medications, refreshes) { enabled, doses, meds, _ -> Triple(enabled, doses, meds) }
+            .collect { (enabled, doses, meds) ->
                 // zamknięte dawki nie potrzebują już powiadomienia, nawet jeśli zostały oznaczone w aplikacji
                 val done = doses.filter { it.status == DoseStatus.Taken || it.status == DoseStatus.Skipped }
                 val notifications = NotificationManagerCompat.from(context)
                 done.forEach { notifications.cancel(reminderCode(it.medication.id, it.date, it.time)) }
+                // powiadomienie usuniętego leku zostaje na ekranie, bo jego alarm już zadziałał; rozpoznajemy je po extras
+                val ids = meds.map { it.id }.toSet()
+                context.getSystemService(NotificationManager::class.java).activeNotifications.forEach {
+                    val id = it.notification.extras.getString(ReminderReceiver.EXTRA_MEDICATION_ID)
+                    if (id != null && id !in ids) notifications.cancel(it.id)
+                }
                 apply(if (enabled) remindersFor(doses, LocalDateTime.now(clock)) else emptyList())
             }
     }

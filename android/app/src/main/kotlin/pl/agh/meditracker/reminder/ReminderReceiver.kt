@@ -1,12 +1,11 @@
 package pl.agh.meditracker.reminder
 
 import android.app.AlarmManager
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.CoroutineScope
@@ -18,13 +17,12 @@ import pl.agh.meditracker.MainActivity
 import pl.agh.meditracker.R
 import pl.agh.meditracker.core.AppContainer
 import pl.agh.meditracker.core.MediTrackerApp
+import pl.agh.meditracker.data.notifications.NotificationController
 import pl.agh.meditracker.model.Dose
 import pl.agh.meditracker.model.DoseStatus
 import java.time.LocalDate
 import java.time.LocalTime
 
-const val SNOOZE_MINUTES = 15L
-private const val CHANNEL = "doses"
 
 // Alarm przypomnienia i przyciski z powiadomienia: „Przyjęte” i „Odłóż”.
 class ReminderReceiver : BroadcastReceiver() {
@@ -46,7 +44,7 @@ class ReminderReceiver : BroadcastReceiver() {
             }
             ACTION_SNOOZE -> {
                 if (dose != null) {
-                    val until = LocalTime.now().plusMinutes(SNOOZE_MINUTES)
+                    val until = LocalTime.now().plusMinutes(container.settings.snoozeMinutes.toLong())
                     container.medications.setDoseStatus(medicationId, date, time, DoseStatus.Snoozed, until)
                 }
                 NotificationManagerCompat.from(context).cancel(code)
@@ -72,26 +70,24 @@ class ReminderReceiver : BroadcastReceiver() {
     private fun show(context: Context, dose: Dose, code: Int) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val reminder = reminderFor(dose, dose.date.atTime(dose.time))
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Przypomnienia o dawkach", NotificationManager.IMPORTANCE_HIGH),
-        )
+        val med = dose.medication
+        NotificationController(context).ensureChannel()
         val open = Intent(context, MainActivity::class.java)
             .setAction(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_LAUNCHER)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-        val builder = NotificationCompat.Builder(context, CHANNEL)
+        val builder = NotificationCompat.Builder(context, NotificationController.CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(reminder.title)
             .setContentText(reminder.text)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+            .addExtras(Bundle().apply { putString(EXTRA_MEDICATION_ID, med.id) })
             .setContentIntent(PendingIntent.getActivity(context, code, open, PendingIntent.FLAG_IMMUTABLE))
-        val med = dose.medication
         if (med.stock >= med.schedule.doseQty) builder.addAction(0, "Przyjęte", action(context, ACTION_TAKE, reminder))
         else builder.setSubText("Brak zapasu")
-        builder.addAction(0, "Odłóż $SNOOZE_MINUTES min", action(context, ACTION_SNOOZE, reminder))
+        builder.addAction(0, "Odłóż ${(context.applicationContext as MediTrackerApp).container.settings.snoozeMinutes} min", action(context, ACTION_SNOOZE, reminder))
         NotificationManagerCompat.from(context).notify(code, builder.build())
     }
 
@@ -106,6 +102,8 @@ class ReminderReceiver : BroadcastReceiver() {
         const val ACTION_REMIND = "pl.agh.meditracker.REMIND"
         const val ACTION_TAKE = "pl.agh.meditracker.TAKE"
         const val ACTION_SNOOZE = "pl.agh.meditracker.SNOOZE"
+        // klucz w extras powiadomienia: po nim scheduler znajduje powiadomienia usuniętych leków
+        const val EXTRA_MEDICATION_ID = "medicationId"
         private const val EXTRA_MEDICATION = "medication"
         private const val EXTRA_DATE = "date"
         private const val EXTRA_TIME = "time"

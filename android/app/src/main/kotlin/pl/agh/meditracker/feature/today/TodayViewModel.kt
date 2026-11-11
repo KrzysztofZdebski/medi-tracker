@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -12,7 +11,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
@@ -29,6 +27,7 @@ import java.time.LocalTime
 sealed interface TodayFeedback {
     data class Taken(val dose: Dose, val stockBefore: Int, val stockAfter: Int) : TodayFeedback
     data class Skipped(val dose: Dose) : TodayFeedback
+    data class Snoozed(val dose: Dose, val minutes: Int) : TodayFeedback
 }
 
 sealed interface TodaySheet {
@@ -47,7 +46,6 @@ data class TodayUiState(
     val doses: List<Dose> = emptyList(),
     val feedback: TodayFeedback? = null,
     val sheet: TodaySheet? = null,
-    val remindersEnabled: Boolean = true,
 ) {
     val next: Dose? get() = nextDose(doses)
 }
@@ -58,7 +56,6 @@ private data class Overlay(val feedback: TodayFeedback? = null, val sheet: Today
 class TodayViewModel(
     private val repository: MedicationRepository,
     private val clock: Clock = Clock.systemDefaultZone(),
-    remindersEnabled: Flow<Boolean> = flowOf(true),
 ) : ViewModel() {
     private val overlay = MutableStateFlow(Overlay())
 
@@ -72,7 +69,7 @@ class TodayViewModel(
 
     private val doses = ticker.map { it.toLocalDate() }.distinctUntilChanged().flatMapLatest { repository.dosesFor(it) }
 
-    val uiState: StateFlow<TodayUiState> = combine(ticker, repository.medications, doses, overlay, remindersEnabled) { now, meds, doses, overlay, reminders ->
+    val uiState: StateFlow<TodayUiState> = combine(ticker, repository.medications, doses, overlay) { now, meds, doses, overlay ->
         TodayUiState(
             loading = false,
             date = now.toLocalDate(),
@@ -81,7 +78,6 @@ class TodayViewModel(
             doses = doses,
             feedback = overlay.feedback,
             sheet = overlay.sheet,
-            remindersEnabled = reminders,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodayUiState())
 
@@ -111,6 +107,9 @@ class TodayViewModel(
         overlay.update { if (it.feedback == feedback) Overlay(sheet = it.sheet.takeUnless { s -> s is TodaySheet.LowStock }) else it }
     }
 
+    // snackbar wygasł: baner nie może wracać po powrocie na zakładkę; arkusz zostaje
+    fun clearFeedback(feedback: TodayFeedback) = overlay.update { if (it.feedback == feedback) it.copy(feedback = null) else it }
+
     fun skip(dose: Dose) {
         repository.setDoseStatus(dose.medication.id, dose.date, dose.time, DoseStatus.Skipped)
         overlay.value = Overlay(feedback = TodayFeedback.Skipped(dose))
@@ -119,7 +118,7 @@ class TodayViewModel(
     fun snooze(dose: Dose, minutes: Int) {
         val until = LocalTime.now(clock).plusMinutes(minutes.toLong())
         repository.setDoseStatus(dose.medication.id, dose.date, dose.time, DoseStatus.Snoozed, until)
-        dismissSheet()
+        overlay.value = Overlay(feedback = TodayFeedback.Snoozed(dose, minutes))
     }
 
     fun refill(medication: Medication, amount: Int) {
