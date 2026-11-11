@@ -4,8 +4,8 @@ use serde_json::{json, Value};
 use sqlx::Row;
 
 use super::{
-    claim_code_attempt, create_session, decode_b64, issue_code, normalize_email, parse_json, send_mail_detached,
-    valid_email,
+    claim_code_attempt, create_session, decode_b64, issue_code, normalize_email, parse_json,
+    send_mail_detached, valid_email, Kdf, NewCredentials, RecoveryMaterial,
 };
 use crate::{
     error::ApiError,
@@ -21,13 +21,6 @@ pub fn router() -> Router<AppState> {
         .route("/auth/register", post(register))
         .route("/auth/verify", post(verify))
         .route("/auth/verify/resend", post(resend))
-}
-
-#[derive(Deserialize)]
-struct Kdf {
-    m: u32,
-    t: u32,
-    p: u32,
 }
 
 #[derive(Deserialize)]
@@ -63,17 +56,11 @@ async fn register(
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let req: RegisterReq = parse_json(&body)?;
     let email = normalize_email(&req.email);
-    if !valid_email(&email) || req.kdf.m == 0 || req.kdf.t == 0 || req.kdf.p == 0 {
+    if !valid_email(&email) {
         return Err(ApiError::InvalidInput);
     }
-    let salt_pw = decode_b64(&req.salt_pw)?;
-    let auth_key = decode_b64(&req.auth_key)?;
-    let slot1 = decode_b64(&req.slot1)?;
-    let slot2 = decode_b64(&req.slot2)?;
-    let recovery_auth = decode_b64(&req.recovery_auth)?;
-    if salt_pw.len() != 16 || auth_key.is_empty() || slot1.is_empty() || slot2.is_empty() || recovery_auth.is_empty() {
-        return Err(ApiError::InvalidInput);
-    }
+    let creds = NewCredentials::parse(&req.kdf, &req.salt_pw, &req.auth_key, &req.slot1)?;
+    let recovery = RecoveryMaterial::parse(&req.slot2, &req.recovery_auth)?;
     let now = (state.clock)();
     state.limits.check(&format!("register:{email}"), 5, 3600, now)?;
 
@@ -92,7 +79,6 @@ async fn register(
         }
     }
 
-    let kdf = json!({"m": req.kdf.m, "t": req.kdf.t, "p": req.kdf.p}).to_string();
     let user_id: String = match existing {
         Some(row) => {
             let id: String = row.get("id");
@@ -102,12 +88,12 @@ async fn register(
                  WHERE id = ? AND email_verified_at IS NULL",
             )
             .bind(now)
-            .bind(&kdf)
-            .bind(&salt_pw)
-            .bind(hash_secret(&auth_key).to_vec())
-            .bind(&slot1)
-            .bind(&slot2)
-            .bind(hash_secret(&recovery_auth).to_vec())
+            .bind(&creds.kdf)
+            .bind(&creds.salt_pw)
+            .bind(&creds.auth_hash)
+            .bind(&creds.slot1)
+            .bind(&recovery.slot2)
+            .bind(&recovery.recovery_auth_hash)
             .bind(&id)
             .execute(&state.db)
             .await?;
@@ -122,12 +108,12 @@ async fn register(
             .bind(&id)
             .bind(&email)
             .bind(now)
-            .bind(&kdf)
-            .bind(&salt_pw)
-            .bind(hash_secret(&auth_key).to_vec())
-            .bind(&slot1)
-            .bind(&slot2)
-            .bind(hash_secret(&recovery_auth).to_vec())
+            .bind(&creds.kdf)
+            .bind(&creds.salt_pw)
+            .bind(&creds.auth_hash)
+            .bind(&creds.slot1)
+            .bind(&recovery.slot2)
+            .bind(&recovery.recovery_auth_hash)
             .execute(&state.db)
             .await?;
             id

@@ -6,6 +6,7 @@ use sqlx::Row;
 
 use super::{
     claim_code_attempt, decode_b64, issue_code, normalize_email, parse_json, Kdf, NewCredentials,
+    RecoveryMaterial,
 };
 use crate::{
     error::ApiError,
@@ -206,11 +207,7 @@ async fn complete(State(state): State<AppState>, body: Bytes) -> Result<StatusCo
 async fn wipe(State(state): State<AppState>, body: Bytes) -> Result<StatusCode, ApiError> {
     let req: WipeReq = parse_json(&body)?;
     let creds = NewCredentials::parse(&req.kdf, &req.salt_pw, &req.auth_key, &req.slot1)?;
-    let slot2 = decode_b64(&req.slot2)?;
-    let recovery_auth = decode_b64(&req.recovery_auth)?;
-    if slot2.is_empty() || recovery_auth.is_empty() {
-        return Err(ApiError::InvalidInput);
-    }
+    let recovery = RecoveryMaterial::parse(&req.slot2, &req.recovery_auth)?;
     let now = (state.clock)();
     let (token_hash, user_id) = live_token(&state, &req.reset_token, now).await?;
 
@@ -218,14 +215,14 @@ async fn wipe(State(state): State<AppState>, body: Bytes) -> Result<StatusCode, 
     consume_token(&mut tx, &token_hash, now).await?;
     sqlx::query(
         "UPDATE users SET salt_pw = ?, kdf = ?, auth_hash = ?, slot1 = ?, slot2 = ?,
-           recovery_auth_hash = ? WHERE id = ?",
+           recovery_auth_hash = ?, active_epoch = active_epoch + 1 WHERE id = ?",
     )
     .bind(&creds.salt_pw)
     .bind(&creds.kdf)
     .bind(&creds.auth_hash)
     .bind(&creds.slot1)
-    .bind(&slot2)
-    .bind(hash_secret(&recovery_auth).to_vec())
+    .bind(&recovery.slot2)
+    .bind(&recovery.recovery_auth_hash)
     .bind(&user_id)
     .execute(&mut *tx)
     .await?;

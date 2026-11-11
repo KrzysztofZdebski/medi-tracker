@@ -130,7 +130,7 @@ pub struct Kdf {
     p: u32,
 }
 
-/// New password-slot material shared by change-password and reset, validated.
+/// New password-slot material shared by register, change-password and reset, validated.
 pub struct NewCredentials {
     pub salt_pw: Vec<u8>,
     pub kdf: String,
@@ -189,4 +189,24 @@ pub async fn create_session(
     .execute(conn)
     .await?;
     Ok(token)
+}
+
+/// Recovery slot material (`slot2` and the recovery proof's hash), validated.
+pub struct RecoveryMaterial {
+    pub slot2: Vec<u8>,
+    pub recovery_auth_hash: Vec<u8>,
+}
+
+impl RecoveryMaterial {
+    pub fn parse(slot2: &str, recovery_auth: &str) -> Result<Self, ApiError> {
+        let slot2 = decode_b64(slot2)?;
+        let recovery_auth = decode_b64(recovery_auth)?;
+        if slot2.is_empty() || recovery_auth.is_empty() {
+            return Err(ApiError::InvalidInput);
+        }
+        Ok(Self {
+            slot2,
+            recovery_auth_hash: hash_secret(&recovery_auth).to_vec(),
+        })
+    }
 }

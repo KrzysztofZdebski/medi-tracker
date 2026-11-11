@@ -359,3 +359,29 @@ async fn reset_inputs_are_validated() {
     let (status, _) = app.post_json("/auth/reset/wipe", body, None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn wipe_bumps_epoch_so_old_device_put_conflicts() {
+    let app = setup().await;
+    let (token, _, epoch) = common::login_session(&app, EMAIL).await;
+    let (status, body) = app.put("/backup", put_body(epoch, None, b"old"), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    let version = body["version"].as_i64();
+
+    let (reset, _) = reset_token(&app).await;
+    let (status, _) = app.post_json("/auth/reset/wipe", wipe_body(&reset), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // The wipe itself consumed one epoch; login then takes the next.
+    let (status, login) = app
+        .post_json("/auth/login", json!({"email": EMAIL, "auth_key": b64(&[32u8; 32])}), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(login["epoch"].as_i64().unwrap(), epoch + 2);
+    let new_token = login["token"].as_str().unwrap();
+    let (status, body) = app
+        .put("/backup", put_body(epoch, version, b"stale"), Some(new_token))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["error"], "conflict");
+}
