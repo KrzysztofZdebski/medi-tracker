@@ -5,6 +5,7 @@ pub mod register;
 use axum::{body::Bytes, Router};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::de::DeserializeOwned;
+use sqlx::SqliteConnection;
 
 use crate::{
     error::ApiError,
@@ -92,9 +93,12 @@ pub fn send_mail_detached(state: &AppState, to: &str, subject: &'static str, bod
 }
 
 /// Creates a 90-day session and returns the raw bearer token (only its hash is stored).
-pub async fn create_session(state: &AppState, user_id: &str) -> Result<String, ApiError> {
+pub async fn create_session(
+    conn: &mut SqliteConnection,
+    now: i64,
+    user_id: &str,
+) -> Result<String, ApiError> {
     let token = new_token();
-    let now = (state.clock)();
     sqlx::query(
         "INSERT INTO sessions (token_hash, user_id, created_at, last_used_at, expires_at)
          VALUES (?, ?, ?, ?, ?)",
@@ -104,7 +108,7 @@ pub async fn create_session(state: &AppState, user_id: &str) -> Result<String, A
     .bind(now)
     .bind(now)
     .bind(now + SESSION_TTL_SECS)
-    .execute(&state.db)
+    .execute(conn)
     .await?;
     Ok(token)
 }

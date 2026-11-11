@@ -2,6 +2,7 @@ mod common;
 
 use axum::http::StatusCode;
 use base64::{engine::general_purpose::STANDARD, Engine};
+use meditracker_server::secrets::fake_salt;
 use serde_json::{json, Value};
 
 const T0: i64 = 1_700_000_000;
@@ -143,27 +144,49 @@ async fn login_wrong_key_and_unknown_email_identical() {
 }
 
 #[tokio::test]
-async fn login_unverified_correct_password_resends_code() {
+async fn login_unverified_correct_key_is_401_and_sends_no_mail() {
     let app = common::spawn().await;
     register_unverified(&app, "a@example.com").await;
     let (status, body) = login(&app, "a@example.com").await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body, json!({"error": "unverified"}));
-    app.wait_mails(2).await;
-    let (status, _) = verify(&app, "a@example.com").await;
-    assert_eq!(status, StatusCode::OK);
-}
-
-#[tokio::test]
-async fn login_unverified_wrong_password_is_invalid_credentials() {
-    let app = common::spawn().await;
-    register_unverified(&app, "b@example.com").await;
-    let (status, body) = login_with(&app, "b@example.com", &[9u8; 32]).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(body["error"], "invalid_credentials");
+    assert_eq!(body, json!({"error": "invalid_credentials"}));
     // Give a wrongly-sent detached mail a chance to show up before asserting there is none.
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert_eq!(app.mailer.sent.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn prelogin_unverified_returns_fake_salt() {
+    let app = common::spawn().await;
+    register_unverified(&app, "a@example.com").await;
+    let (status, body) = prelogin(&app, "a@example.com").await;
+    assert_eq!(status, StatusCode::OK);
+    let expected = fake_salt(&[7u8; 32], "a@example.com");
+    assert_eq!(body["salt_pw"], b64(&expected));
+    assert_ne!(body["salt_pw"], b64(&[1u8; 16]));
+    assert_eq!(body["kdf"], json!({"m": 65536, "t": 3, "p": 1}));
+}
+
+#[tokio::test]
+async fn register_probe_cannot_distinguish_verified_from_unknown() {
+    let app = common::spawn().await;
+    account(&app, "v@example.com").await;
+    // Attacker registers both addresses with its own salt S ([6u8; 16]) and key K ([8u8; 32]).
+    // Registering the verified one only sends a notice and leaves the account untouched.
+    for email in ["v@example.com", "u@example.com"] {
+        let mut body = reg_body(email);
+        body["salt_pw"] = json!(b64(&[6u8; 16]));
+        body["auth_key"] = json!(b64(&[8u8; 32]));
+        let (status, _) = app.post_json("/auth/register", body, None).await;
+        assert_eq!(status, StatusCode::ACCEPTED);
+    }
+    let (_, pv) = prelogin(&app, "v@example.com").await;
+    let (_, pu) = prelogin(&app, "u@example.com").await;
+    assert_ne!(pv["salt_pw"], b64(&[6u8; 16]));
+    assert_ne!(pu["salt_pw"], b64(&[6u8; 16]));
+    let lv = login_with(&app, "v@example.com", &[8u8; 32]).await;
+    let lu = login_with(&app, "u@example.com", &[8u8; 32]).await;
+    assert_eq!(lv, lu);
 }
 
 #[tokio::test]

@@ -189,7 +189,8 @@ async fn verify(State(state): State<AppState>, body: Bytes) -> Result<Json<Value
         .bind(PURPOSE)
         .execute(&state.db)
         .await?;
-    let token = create_session(&state, &user_id).await?;
+    let mut conn = state.db.acquire().await?;
+    let token = create_session(&mut conn, now, &user_id).await?;
     Ok(Json(json!({"token": token, "user_id": user_id, "epoch": epoch})))
 }
 

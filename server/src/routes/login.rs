@@ -4,10 +4,10 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use super::{decode_b64, issue_code, normalize_email, parse_json, SESSION_TTL_SECS};
+use super::{create_session, decode_b64, normalize_email, parse_json};
 use crate::{
     error::ApiError,
-    secrets::{ct_eq, fake_salt, hash_secret, new_token},
+    secrets::{ct_eq, fake_salt, hash_secret},
     session::Session,
     AppState,
 };
@@ -36,7 +36,7 @@ async fn prelogin(State(state): State<AppState>, body: Bytes) -> Result<Json<Val
     let now = (state.clock)();
     state.limits.check(&format!("prelogin:{email}"), 30, 900, now)?;
 
-    let row = sqlx::query("SELECT salt_pw, kdf FROM users WHERE email = ?")
+    let row = sqlx::query("SELECT salt_pw, kdf FROM users WHERE email = ? AND email_verified_at IS NOT NULL")
         .bind(&email)
         .fetch_optional(&state.db)
         .await?;
@@ -69,7 +69,7 @@ async fn login(State(state): State<AppState>, body: Bytes) -> Result<Json<Value>
     let auth_key = decode_b64(&req.auth_key)?;
 
     let user = sqlx::query(
-        "SELECT id, auth_hash, slot1, email_verified_at FROM users WHERE email = ?",
+        "SELECT id, auth_hash, slot1 FROM users WHERE email = ? AND email_verified_at IS NOT NULL",
     )
     .bind(&email)
     .fetch_optional(&state.db)
@@ -87,14 +87,8 @@ async fn login(State(state): State<AppState>, body: Bytes) -> Result<Json<Value>
         _ => return Err(ApiError::InvalidCredentials),
     };
     let user_id: String = user.get("id");
-    let verified: Option<i64> = user.get("email_verified_at");
-    if verified.is_none() {
-        issue_code(&state, &user_id, "verify", &email).await?;
-        return Err(ApiError::Unverified);
-    }
     let slot1: Option<Vec<u8>> = user.get("slot1");
 
-    let token = new_token();
     let mut tx = state.db.begin().await?;
     let epoch: i64 = sqlx::query_scalar(
         "UPDATE users SET active_epoch = active_epoch + 1 WHERE id = ? RETURNING active_epoch",
@@ -102,17 +96,7 @@ async fn login(State(state): State<AppState>, body: Bytes) -> Result<Json<Value>
     .bind(&user_id)
     .fetch_one(&mut *tx)
     .await?;
-    sqlx::query(
-        "INSERT INTO sessions (token_hash, user_id, created_at, last_used_at, expires_at)
-         VALUES (?, ?, ?, ?, ?)",
-    )
-    .bind(hash_secret(token.as_bytes()).to_vec())
-    .bind(&user_id)
-    .bind(now)
-    .bind(now)
-    .bind(now + SESSION_TTL_SECS)
-    .execute(&mut *tx)
-    .await?;
+    let token = create_session(&mut tx, now, &user_id).await?;
     let version: Option<i64> = sqlx::query_scalar("SELECT version FROM backups WHERE user_id = ?")
         .bind(&user_id)
         .fetch_optional(&mut *tx)

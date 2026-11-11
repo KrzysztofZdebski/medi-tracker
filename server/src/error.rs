@@ -10,7 +10,6 @@ pub enum ApiError {
     InvalidInput,
     InvalidCode,
     InvalidCredentials,
-    Unverified,
     Unauthorized,
     InvalidToken,
     InvalidRecovery,
@@ -28,7 +27,6 @@ impl ApiError {
             | ApiError::Unauthorized
             | ApiError::InvalidToken
             | ApiError::InvalidRecovery => StatusCode::UNAUTHORIZED,
-            ApiError::Unverified => StatusCode::FORBIDDEN,
             ApiError::Conflict { .. } => StatusCode::CONFLICT,
             ApiError::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             ApiError::RateLimited => StatusCode::TOO_MANY_REQUESTS,
@@ -41,7 +39,6 @@ impl ApiError {
             ApiError::InvalidInput => "invalid_input",
             ApiError::InvalidCode => "invalid_code",
             ApiError::InvalidCredentials => "invalid_credentials",
-            ApiError::Unverified => "unverified",
             ApiError::Unauthorized => "unauthorized",
             ApiError::InvalidToken => "invalid_token",
             ApiError::InvalidRecovery => "invalid_recovery",
@@ -83,7 +80,6 @@ mod tests {
             (ApiError::InvalidInput, 400, "invalid_input"),
             (ApiError::InvalidCode, 400, "invalid_code"),
             (ApiError::InvalidCredentials, 401, "invalid_credentials"),
-            (ApiError::Unverified, 403, "unverified"),
             (ApiError::Unauthorized, 401, "unauthorized"),
             (ApiError::InvalidToken, 401, "invalid_token"),
             (ApiError::InvalidRecovery, 401, "invalid_recovery"),
