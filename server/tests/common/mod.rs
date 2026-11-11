@@ -161,3 +161,63 @@ impl TestApp {
         self.send(Method::DELETE, path, json, token).await
     }
 }
+
+fn b64(bytes: &[u8]) -> String {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    STANDARD.encode(bytes)
+}
+
+/// Registers and verifies an account (auth_key = [2u8; 32], slot1 = [3u8; 60]).
+pub async fn register_verified(app: &TestApp, email: &str) {
+    use serde_json::json;
+    let (status, _) = app
+        .post_json(
+            "/auth/register",
+            json!({
+                "email": email,
+                "kdf": {"m": 65536, "t": 3, "p": 1},
+                "salt_pw": b64(&[1u8; 16]),
+                "auth_key": b64(&[2u8; 32]),
+                "slot1": b64(&[3u8; 60]),
+                "slot2": b64(&[4u8; 60]),
+                "recovery_auth": b64(&[5u8; 32]),
+            }),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let n = app.mailer.sent.lock().unwrap().len() + 1;
+    app.wait_mails(n).await;
+    let body = app.mailer.sent.lock().unwrap().last().unwrap().2.clone();
+    let chars: Vec<char> = body.chars().collect();
+    let code: String = chars
+        .windows(6)
+        .find_map(|w| w.iter().all(|c| c.is_ascii_digit()).then(|| w.iter().collect()))
+        .expect("no code in mail");
+    let (status, _) = app
+        .post_json(
+            "/auth/verify",
+            json!({"email": email, "code": code, "auth_key": b64(&[2u8; 32])}),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+/// Logs in with the default key; returns (token, user_id, epoch). Each login bumps the epoch.
+pub async fn login_session(app: &TestApp, email: &str) -> (String, String, i64) {
+    use serde_json::json;
+    let (status, body) = app
+        .post_json(
+            "/auth/login",
+            json!({"email": email, "auth_key": b64(&[2u8; 32])}),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    (
+        body["token"].as_str().unwrap().to_string(),
+        body["user_id"].as_str().unwrap().to_string(),
+        body["epoch"].as_i64().unwrap(),
+    )
+}

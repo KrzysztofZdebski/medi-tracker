@@ -1,3 +1,4 @@
+pub mod account;
 pub mod backup;
 pub mod login;
 pub mod register;
@@ -20,6 +21,7 @@ pub fn router() -> Router<AppState> {
     register::router()
         .merge(login::router())
         .merge(backup::router())
+        .merge(account::router())
 }
 
 /// Parses a JSON body, mapping every failure (malformed, missing fields) to `invalid_input`.
