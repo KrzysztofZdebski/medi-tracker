@@ -11,6 +11,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
+import pl.agh.meditracker.BuildConfig
+import pl.agh.meditracker.data.account.AccountRepository
+import pl.agh.meditracker.data.account.AccountStore
+import pl.agh.meditracker.data.account.KeystoreSecretBox
+import pl.agh.meditracker.data.account.api.HttpAccountApi
 import pl.agh.meditracker.data.catalog.CatalogRepository
 import pl.agh.meditracker.data.repository.MedicationRepository
 import pl.agh.meditracker.data.settings.SettingsStore
@@ -27,6 +33,12 @@ class AppContainer(context: Context) {
     val catalog = CatalogRepository(context.filesDir)
     val settings = SettingsStore(context)
     val reminders = ReminderScheduler(context, medications, settings)
+
+    // konstrukcja bez sieci; Keystore dopiero przy pierwszym odczycie lub zapisie sekretu
+    val account = AccountRepository(
+        HttpAccountApi(BuildConfig.SERVER_URL, OkHttpClient()),
+        AccountStore(context.getSharedPreferences("account", Context.MODE_PRIVATE), KeystoreSecretBox()),
+    )
 }
 
 // open: testy Robolectric podmieniają onCreate, żeby nie startować synchronizacji katalogu z sieci
