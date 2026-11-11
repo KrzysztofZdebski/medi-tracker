@@ -3,7 +3,10 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use super::{create_session, decode_b64, issue_code, normalize_email, parse_json, valid_email};
+use super::{
+    create_session, decode_b64, issue_code, normalize_email, parse_json, send_mail_detached,
+    valid_email,
+};
 use crate::{
     error::ApiError,
     secrets::{ct_eq, hash_secret, hmac_code, new_id},
@@ -43,6 +46,7 @@ struct RegisterReq {
 struct VerifyReq {
     email: String,
     code: String,
+    auth_key: String,
 }
 
 #[derive(Deserialize)]
@@ -84,14 +88,7 @@ async fn register(
             let notice = "Ktoś próbował utworzyć konto mediTracker z tym adresem e-mail. \
                           Jeśli to byłeś Ty, możesz się zalogować na istniejące konto. \
                           W przeciwnym razie zignoruj tę wiadomość.";
-            if state
-                .mailer
-                .send(&email, "mediTracker: próba rejestracji", notice)
-                .await
-                .is_err()
-            {
-                tracing::error!("sending notice email failed");
-            }
+            send_mail_detached(&state, &email, "mediTracker: próba rejestracji", notice.into());
             return Ok(accepted());
         }
     }
@@ -147,33 +144,38 @@ async fn verify(State(state): State<AppState>, body: Bytes) -> Result<Json<Value
     let now = (state.clock)();
     state.limits.check(&format!("verify:{email}"), 10, 900, now)?;
 
-    let row = sqlx::query(
-        "SELECT u.id AS id, u.active_epoch AS epoch, c.code_hash AS code_hash,
-                c.expires_at AS expires_at, c.attempts AS attempts
-         FROM users u JOIN email_codes c ON c.user_id = u.id AND c.purpose = ?
-         WHERE u.email = ? AND u.email_verified_at IS NULL",
+    let auth_key = decode_b64(&req.auth_key)?;
+
+    let user = sqlx::query(
+        "SELECT id, active_epoch, auth_hash FROM users WHERE email = ? AND email_verified_at IS NULL",
     )
-    .bind(PURPOSE)
     .bind(&email)
     .fetch_optional(&state.db)
     .await?
     .ok_or(ApiError::InvalidCode)?;
-    let user_id: String = row.get("id");
-    let epoch: i64 = row.get("epoch");
-    let code_hash: Vec<u8> = row.get("code_hash");
-    let expires_at: i64 = row.get("expires_at");
-    let attempts: i64 = row.get("attempts");
+    let user_id: String = user.get("id");
+    let epoch: i64 = user.get("active_epoch");
+    let auth_hash: Vec<u8> = user.get("auth_hash");
 
-    if now > expires_at || attempts >= MAX_ATTEMPTS {
-        return Err(ApiError::InvalidCode);
-    }
-    let given = hmac_code(&state.config.server_secret, req.code.trim());
-    if !ct_eq(&given, &code_hash) {
-        sqlx::query("UPDATE email_codes SET attempts = attempts + 1 WHERE user_id = ? AND purpose = ?")
-            .bind(&user_id)
-            .bind(PURPOSE)
-            .execute(&state.db)
-            .await?;
+    // Claim an attempt atomically before comparing, so concurrent guesses can't exceed the cap.
+    let claimed = sqlx::query(
+        "UPDATE email_codes SET attempts = attempts + 1
+         WHERE user_id = ? AND purpose = ? AND attempts < ? AND expires_at >= ?
+         RETURNING code_hash",
+    )
+    .bind(&user_id)
+    .bind(PURPOSE)
+    .bind(MAX_ATTEMPTS)
+    .bind(now)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::InvalidCode)?;
+    let code_hash: Vec<u8> = claimed.get("code_hash");
+
+    // Both checks always run; the key binding stops a re-registrant from reusing the victim's code.
+    let code_ok = ct_eq(&hmac_code(&state.config.server_secret, req.code.trim()), &code_hash);
+    let key_ok = ct_eq(&hash_secret(&auth_key), &auth_hash);
+    if !(code_ok & key_ok) {
         return Err(ApiError::InvalidCode);
     }
 

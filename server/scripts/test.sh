@@ -25,4 +25,7 @@ ssh "$REMOTE" "docker run --rm \
   -v meditracker-target:/src/server/target \
   -w /src/server rust:1-slim-bookworm \
   sh -c 'cargo test \"\$@\"; rc=\$?; chown \$HOST_UID:\$HOST_GID /src/server/Cargo.lock 2>/dev/null; exit \$rc' sh$ARGS"
-exit $?
+rc=$?
+# Keep the lockfile in sync with what cargo resolved remotely (success or failure).
+scp -q "$REMOTE:meditracker-src/server/Cargo.lock" "$REPO_ROOT/server/Cargo.lock" || true
+exit $rc

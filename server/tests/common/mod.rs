@@ -19,7 +19,7 @@ use meditracker_server::{
     config::{Config, EmailMode},
     init_db,
     limits::Limits,
-    mailer::MemoryMailer,
+    mailer::{Mailer, MemoryMailer},
     AppState,
 };
 use serde_json::Value;
@@ -33,9 +33,31 @@ pub struct TestApp {
     time: Arc<AtomicI64>,
 }
 
+/// Wraps the in-memory mailer with an artificial delay to emulate a slow SMTP server.
+struct DelayMailer {
+    inner: Arc<MemoryMailer>,
+    delay: std::time::Duration,
+}
+
+#[async_trait::async_trait]
+impl Mailer for DelayMailer {
+    async fn send(&self, to: &str, subject: &str, body: &str) -> anyhow::Result<()> {
+        tokio::time::sleep(self.delay).await;
+        self.inner.send(to, subject, body).await
+    }
+}
+
 pub async fn spawn() -> TestApp {
+    spawn_with_mail_delay(0).await
+}
+
+pub async fn spawn_with_mail_delay(delay_ms: u64) -> TestApp {
     let db = init_db("sqlite::memory:").await.expect("db init");
     let mailer = Arc::new(MemoryMailer::default());
+    let state_mailer: Arc<dyn Mailer> = Arc::new(DelayMailer {
+        inner: mailer.clone(),
+        delay: std::time::Duration::from_millis(delay_ms),
+    });
     let time = Arc::new(AtomicI64::new(1_700_000_000));
     let clock_time = time.clone();
     let config = Config {
@@ -53,7 +75,7 @@ pub async fn spawn() -> TestApp {
     let state = AppState {
         db: db.clone(),
         config: Arc::new(config),
-        mailer: mailer.clone(),
+        mailer: state_mailer,
         limits: Arc::new(Limits::new()),
         clock: Arc::new(move || clock_time.load(Ordering::SeqCst)),
     };
@@ -66,6 +88,17 @@ pub async fn spawn() -> TestApp {
 }
 
 impl TestApp {
+    /// Mails are sent off the request path; waits until at least `n` have been recorded.
+    pub async fn wait_mails(&self, n: usize) {
+        for _ in 0..200 {
+            if self.mailer.sent.lock().unwrap().len() >= n {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("expected {n} mails");
+    }
+
     pub fn set_time(&self, t: i64) {
         self.time.store(t, Ordering::SeqCst);
     }

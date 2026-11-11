@@ -71,15 +71,20 @@ pub async fn issue_code(
     .execute(&state.db)
     .await?;
     let body = format!("Twój kod: {code}. Wygasa za 15 minut.");
-    if state
-        .mailer
-        .send(email, "mediTracker: kod potwierdzający", &body)
-        .await
-        .is_err()
-    {
-        tracing::error!("sending code email failed");
-    }
+    send_mail_detached(state, email, "mediTracker: kod potwierdzający", body);
     Ok(())
+}
+
+/// Sends a mail off the request path, so response timing doesn't reveal whether a mail was sent.
+/// Failures are logged without addresses and not surfaced.
+pub fn send_mail_detached(state: &AppState, to: &str, subject: &'static str, body: String) {
+    let mailer = state.mailer.clone();
+    let to = to.to_string();
+    tokio::spawn(async move {
+        if mailer.send(&to, subject, &body).await.is_err() {
+            tracing::error!("sending email failed");
+        }
+    });
 }
 
 /// Creates a 90-day session and returns the raw bearer token (only its hash is stored).

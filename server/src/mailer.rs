@@ -53,6 +53,7 @@ impl SmtpMailer {
             .map_err(|_| anyhow::anyhow!("SMTP_FROM is not a valid mailbox"))?;
         let transport = AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(host)?
             .port(587)
+            .timeout(Some(std::time::Duration::from_secs(10)))
             .credentials(Credentials::new(user.to_string(), pass.to_string()))
             .build();
         Ok(Self { transport, from })

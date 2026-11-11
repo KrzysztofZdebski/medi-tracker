@@ -52,9 +52,23 @@ async fn register(app: &common::TestApp, email: &str, auth_key: &[u8]) -> (Statu
         .await
 }
 
+/// Verifies with the default registration key ([2u8; 32]).
 async fn verify(app: &common::TestApp, email: &str, code: &str) -> (StatusCode, Value) {
-    app.post_json("/auth/verify", json!({"email": email, "code": code}), None)
-        .await
+    verify_with_key(app, email, code, &[2u8; 32]).await
+}
+
+async fn verify_with_key(
+    app: &common::TestApp,
+    email: &str,
+    code: &str,
+    auth_key: &[u8],
+) -> (StatusCode, Value) {
+    app.post_json(
+        "/auth/verify",
+        json!({"email": email, "code": code, "auth_key": b64(auth_key)}),
+        None,
+    )
+    .await
 }
 
 async fn auth_hash(app: &common::TestApp, email: &str) -> Vec<u8> {
@@ -78,6 +92,7 @@ async fn register_then_verify_returns_session() {
     let (status, body) = register(&app, "a@example.com", &[2u8; 32]).await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(body, json!({}));
+    app.wait_mails(1).await;
     assert_eq!(app.mailer.sent.lock().unwrap().len(), 1);
     let code = last_code(&app);
     assert_eq!(code.len(), 6);
@@ -96,6 +111,7 @@ async fn email_is_normalized() {
     let app = common::spawn().await;
     let (status, _) = register(&app, " Anna@Example.COM", &[2u8; 32]).await;
     assert_eq!(status, StatusCode::ACCEPTED);
+    app.wait_mails(1).await;
     let code = last_code(&app);
     let (status, _) = verify(&app, "anna@example.com", &code).await;
     assert_eq!(status, StatusCode::OK);
@@ -105,6 +121,7 @@ async fn email_is_normalized() {
 async fn wrong_code_five_times_invalidates() {
     let app = common::spawn().await;
     register(&app, "a@example.com", &[2u8; 32]).await;
+    app.wait_mails(1).await;
     let code = last_code(&app);
     let wrong = if code == "000000" { "111111" } else { "000000" };
     for _ in 0..5 {
@@ -121,6 +138,7 @@ async fn wrong_code_five_times_invalidates() {
 async fn code_expires_after_15_minutes() {
     let app = common::spawn().await;
     register(&app, "a@example.com", &[2u8; 32]).await;
+    app.wait_mails(1).await;
     let code = last_code(&app);
     app.set_time(T0 + 901);
     let (status, body) = verify(&app, "a@example.com", &code).await;
@@ -132,6 +150,7 @@ async fn code_expires_after_15_minutes() {
 async fn register_existing_verified_email_looks_identical() {
     let app = common::spawn().await;
     register(&app, "a@example.com", &[2u8; 32]).await;
+    app.wait_mails(1).await;
     let code = last_code(&app);
     let (status, _) = verify(&app, "a@example.com", &code).await;
     assert_eq!(status, StatusCode::OK);
@@ -140,6 +159,7 @@ async fn register_existing_verified_email_looks_identical() {
     let (status, body) = register(&app, "a@example.com", &[9u8; 32]).await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(body, json!({}));
+    app.wait_mails(2).await;
     {
         let sent = app.mailer.sent.lock().unwrap();
         assert_eq!(sent.len(), 2);
@@ -155,14 +175,16 @@ async fn register_existing_verified_email_looks_identical() {
 async fn register_pending_email_overwrites() {
     let app = common::spawn().await;
     register(&app, "a@example.com", &[2u8; 32]).await;
+    app.wait_mails(1).await;
     let first = last_code(&app);
     register(&app, "a@example.com", &[9u8; 32]).await;
+    app.wait_mails(2).await;
     let second = last_code(&app);
     if first != second {
-        let (status, _) = verify(&app, "a@example.com", &first).await;
+        let (status, _) = verify_with_key(&app, "a@example.com", &first, &[9u8; 32]).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "old code must be replaced");
     }
-    let (status, _) = verify(&app, "a@example.com", &second).await;
+    let (status, _) = verify_with_key(&app, "a@example.com", &second, &[9u8; 32]).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         auth_hash(&app, "a@example.com").await,
@@ -219,6 +241,7 @@ async fn invalid_input_rejected() {
     let (status, body) = app.post_json("/auth/register", bad_b64, None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_input");
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     assert!(app.mailer.sent.lock().unwrap().is_empty());
 }
 
@@ -248,5 +271,75 @@ async fn resend_unknown_email_sends_nothing() {
         .await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(body, json!({}));
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     assert!(app.mailer.sent.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn mail_is_sent_off_the_request_path() {
+    let app = common::spawn_with_mail_delay(200).await;
+    register(&app, "a@example.com", &[2u8; 32]).await;
+    app.wait_mails(1).await;
+    let started = std::time::Instant::now();
+    let (status, _) = app
+        .post_json("/auth/verify/resend", json!({"email": "a@example.com"}), None)
+        .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert!(
+        started.elapsed() < std::time::Duration::from_millis(50),
+        "resend waited for the mailer: {:?}",
+        started.elapsed()
+    );
+    app.wait_mails(2).await;
+}
+
+#[tokio::test]
+async fn concurrent_wrong_verifies_respect_attempt_cap() {
+    let app = common::spawn().await;
+    register(&app, "a@example.com", &[2u8; 32]).await;
+    app.wait_mails(1).await;
+    let code = last_code(&app);
+    let wrong = if code == "000000" { "111111" } else { "000000" };
+    let results = futures_util::future::join_all(
+        (0..10).map(|_| verify(&app, "a@example.com", wrong)),
+    )
+    .await;
+    assert!(results.iter().all(|(s, _)| *s == StatusCode::BAD_REQUEST));
+    let attempts: i64 = sqlx::query_scalar("SELECT attempts FROM email_codes")
+        .fetch_one(&app.db)
+        .await
+        .unwrap();
+    assert_eq!(attempts, 5);
+    // Let the rate-limit window pass while the code is still unexpired.
+    app.set_time(T0 + 900);
+    let (status, body) = verify(&app, "a@example.com", &code).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_code");
+}
+
+#[tokio::test]
+async fn verify_with_other_registrants_auth_key_fails() {
+    let app = common::spawn().await;
+    register(&app, "a@example.com", &[0xAA; 32]).await; // victim, key A
+    register(&app, "a@example.com", &[0xBB; 32]).await; // attacker overwrites, key B
+    app.wait_mails(2).await;
+    let code = last_code(&app);
+    let (status, body) = verify_with_key(&app, "a@example.com", &code, &[0xAA; 32]).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_code");
+    let (status, _) = verify_with_key(&app, "a@example.com", &code, &[0xBB; 32]).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn verify_requires_auth_key() {
+    let app = common::spawn().await;
+    register(&app, "a@example.com", &[2u8; 32]).await;
+    app.wait_mails(1).await;
+    let code = last_code(&app);
+    let (status, body) = app
+        .post_json("/auth/verify", json!({"email": "a@example.com", "code": code}), None)
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_input");
 }
