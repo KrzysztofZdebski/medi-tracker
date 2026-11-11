@@ -6,6 +6,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import pl.agh.meditracker.BuildConfig
 import pl.agh.meditracker.model.CatalogProduct
 import java.io.File
 import java.net.HttpURLConnection
@@ -14,13 +15,15 @@ import java.security.DigestInputStream
 import java.security.MessageDigest
 import java.util.zip.GZIPInputStream
 
-private const val BASE = "https://github.com/KrzysztofZdebski/medi-tracker/releases/download/katalog"
 private const val SCHEMA = 1
 
 // Unsupported: nowszy schemat katalogu wymaga nowszej wersji aplikacji
 enum class CatalogSync { Updated, UpToDate, Unsupported, Failed }
 
-class CatalogRepository(private val dir: File) {
+class CatalogRepository(
+    private val dir: File,
+    private val baseUrl: String = "${BuildConfig.SERVER_URL}/catalog",
+) {
     private val db = File(dir, "leki.sqlite")
     private val localVersion = File(dir, "version.json")
 
@@ -41,14 +44,14 @@ class CatalogRepository(private val dir: File) {
     suspend fun sync(): CatalogSync = syncing.withLock { download() }
 
     private suspend fun download(): CatalogSync = withContext(Dispatchers.IO) {
-        val vc = open("$BASE/version.json")
+        val vc = open("$baseUrl/version.json")
         if (vc.responseCode != 200) return@withContext CatalogSync.Failed
         val versionText = vc.inputStream.use { it.readBytes() }.decodeToString()
         val remote = JSONObject(versionText)
         if (remote.getInt("schema") != SCHEMA) return@withContext CatalogSync.Unsupported
         if (db.exists() && remote.getString("stan_na_dzien") == localStan()) return@withContext CatalogSync.UpToDate
 
-        val gc = open("$BASE/leki.sqlite.gz")
+        val gc = open("$baseUrl/leki.sqlite.gz")
         if (gc.responseCode != 200) return@withContext CatalogSync.Failed
         val tmp = File(dir, "leki.sqlite.tmp")
         val sha = MessageDigest.getInstance("SHA-256")

@@ -1,13 +1,13 @@
 # Katalog leków (SQLite)
 
-Plik SQLite z lekami ludzkimi z RPL, które da się zeskanować, czyli mają GTIN. GitHub Actions buduje go codziennie i publikuje jako asset w release `katalog`. Aplikacja pobiera cały plik i wyszukuje lokalnie (offline, bez wysyłania na serwer informacji o lekach użytkownika).
+Plik SQLite z lekami ludzkimi z RPL, które da się zeskanować, czyli mają GTIN. Kontener `catalog` na serwerze kryzys-server buduje go codziennie, a serwer mediTracker go wystawia. Aplikacja pobiera cały plik i wyszukuje lokalnie (offline, bez wysyłania na serwer informacji o lekach użytkownika).
 
 ## Adresy
 
 | Plik | URL |
 |---|---|
-| Wersja | https://github.com/KrzysztofZdebski/medi-tracker/releases/download/katalog/version.json |
-| Baza (gzip) | https://github.com/KrzysztofZdebski/medi-tracker/releases/download/katalog/leki.sqlite.gz |
+| Wersja | https://kryzys-server.tail9dde62.ts.net:10000/catalog/version.json |
+| Baza (gzip) | https://kryzys-server.tail9dde62.ts.net:10000/catalog/leki.sqlite.gz |
 
 `version.json`:
 ```json
@@ -61,11 +61,13 @@ Co jest odfiltrowane, a co zostawione:
 
 ## Pipeline
 
-[`.github/workflows/catalog.yml`](../.github/workflows/catalog.yml) uruchamia się codziennie, po pushu zmian w `catalog/` i ręcznie (zakładka Actions → „Run workflow”). Kolejne kroki:
+Katalog buduje kontener `catalog` na kryzys-server (`docker compose`, szczegóły w [`server/README.md`](../server/README.md)). Uruchamia się codziennie około 05:17 UTC. Kolejne kroki:
 1. Test `catalog/test_build.py`.
 2. Pobranie `overall.xml`.
 3. `build.py`.
-4. Upload do release `katalog`: najpierw baza, potem `version.json`.
+4. Publikacja do katalogu serwowanego pod `/catalog`: najpierw baza, potem `version.json`.
+
+Logi: `docker logs meditracker-catalog-1`.
 
 Zabezpieczenia:
 - Jeśli eksport ma mniej niż 15 000 produktów (ucięty albo zepsuty plik), build kończy się błędem i nic nie jest publikowane.
@@ -77,7 +79,7 @@ python catalog/test_build.py
 python catalog/build.py overall.xml out
 ```
 
-**Uwaga:** GitHub wyłącza zaplanowane workflow w publicznym repo po 60 dniach bez commitów. Wtedy trzeba je włączyć ponownie w zakładce Actions.
+Stary release GitHub `katalog` nie jest już aktualizowany (workflow GitHub Actions został usunięty). Aplikacja korzysta wyłącznie z serwera.
 
 ## Czego katalog jeszcze nie zawiera
 
