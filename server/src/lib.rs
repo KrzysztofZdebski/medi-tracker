@@ -2,6 +2,7 @@ pub mod config;
 pub mod error;
 pub mod limits;
 pub mod mailer;
+pub mod maintenance;
 pub mod routes;
 pub mod secrets;
 pub mod session;
@@ -13,7 +14,10 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
     SqlitePool,
 };
-use tower_http::trace::{DefaultOnResponse, TraceLayer};
+use tower_http::{
+    services::ServeDir,
+    trace::{DefaultOnResponse, TraceLayer},
+};
 
 use crate::{config::Config, limits::Limits, mailer::Mailer};
 
@@ -72,6 +76,7 @@ pub fn app(state: AppState) -> Router {
 
     Router::new()
         .route("/health", get(|| async { "ok" }))
+        .nest_service("/catalog", ServeDir::new(&state.config.catalog_dir))
         .merge(routes::router())
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(trace)

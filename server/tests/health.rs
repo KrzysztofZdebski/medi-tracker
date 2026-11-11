@@ -46,3 +46,24 @@ async fn migrations_create_schema_with_foreign_keys_on() {
         .unwrap();
     assert_eq!(n, 0);
 }
+
+#[tokio::test]
+async fn catalog_files_are_served() {
+    let dir = std::env::temp_dir().join(format!("meditracker-catalog-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("version.json"), br#"{"schema":1}"#).unwrap();
+    let blob: Vec<u8> = (0u8..=255).collect();
+    std::fs::write(dir.join("leki.sqlite.gz"), &blob).unwrap();
+
+    let app = common::spawn_with_catalog(dir.clone()).await;
+    let (status, body) = app.get_raw("/catalog/version.json").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, br#"{"schema":1}"#);
+    let (status, body) = app.get_raw("/catalog/leki.sqlite.gz").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, blob);
+    let (status, _) = app.get_raw("/catalog/missing.bin").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}

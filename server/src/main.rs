@@ -6,7 +6,7 @@ use meditracker_server::{
     init_db,
     limits::Limits,
     mailer::{LogMailer, Mailer, SmtpMailer},
-    routes::register::purge_unverified,
+    maintenance,
     system_clock, AppState,
 };
 
@@ -44,17 +44,10 @@ async fn main() -> anyhow::Result<()> {
         limits: Arc::new(Limits::new()),
         clock: system_clock(),
     };
-    let purge_state = state.clone();
-    tokio::spawn(async move {
-        let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
-        loop {
-            tick.tick().await;
-            let now = (purge_state.clock)();
-            if purge_unverified(&purge_state, now).await.is_err() {
-                tracing::error!("purging unverified accounts failed");
-            }
-        }
-    });
+    let backup_dir = std::path::PathBuf::from(
+        std::env::var("BACKUP_DIR").unwrap_or_else(|_| "/data/backups".into()),
+    );
+    maintenance::spawn(state.clone(), backup_dir);
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!("listening on {bind}");
     axum::serve(listener, app(state)).await?;

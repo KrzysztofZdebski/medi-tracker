@@ -30,6 +30,7 @@ pub struct TestApp {
     pub router: Router,
     pub mailer: Arc<MemoryMailer>,
     pub db: SqlitePool,
+    state: AppState,
     time: Arc<AtomicI64>,
 }
 
@@ -52,6 +53,14 @@ pub async fn spawn() -> TestApp {
 }
 
 pub async fn spawn_with_mail_delay(delay_ms: u64) -> TestApp {
+    spawn_full(delay_ms, PathBuf::from("../catalog")).await
+}
+
+pub async fn spawn_with_catalog(dir: PathBuf) -> TestApp {
+    spawn_full(0, dir).await
+}
+
+async fn spawn_full(delay_ms: u64, catalog_dir: PathBuf) -> TestApp {
     let db = init_db("sqlite::memory:").await.expect("db init");
     let mailer = Arc::new(MemoryMailer::default());
     let state_mailer: Arc<dyn Mailer> = Arc::new(DelayMailer {
@@ -70,7 +79,7 @@ pub async fn spawn_with_mail_delay(delay_ms: u64) -> TestApp {
         smtp_pass: None,
         smtp_from: None,
         public_url: "http://localhost".into(),
-        catalog_dir: PathBuf::from("../catalog"),
+        catalog_dir,
     };
     let state = AppState {
         db: db.clone(),
@@ -80,7 +89,8 @@ pub async fn spawn_with_mail_delay(delay_ms: u64) -> TestApp {
         clock: Arc::new(move || clock_time.load(Ordering::SeqCst)),
     };
     TestApp {
-        router: app(state),
+        router: app(state.clone()),
+        state,
         mailer,
         db,
         time,
@@ -97,6 +107,10 @@ impl TestApp {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
         panic!("expected {n} mails");
+    }
+
+    pub fn state(&self) -> AppState {
+        self.state.clone()
     }
 
     pub fn set_time(&self, t: i64) {
@@ -133,6 +147,15 @@ impl TestApp {
         let value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()));
         (status, value)
+    }
+
+    /// Raw GET: status plus the unparsed body bytes.
+    pub async fn get_raw(&self, path: &str) -> (StatusCode, Vec<u8>) {
+        let req = Request::builder().uri(path).body(Body::empty()).unwrap();
+        let resp = self.router.clone().oneshot(req).await.unwrap();
+        let status = resp.status();
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        (status, bytes.to_vec())
     }
 
     pub async fn get(&self, path: &str, token: Option<&str>) -> (StatusCode, Value) {
