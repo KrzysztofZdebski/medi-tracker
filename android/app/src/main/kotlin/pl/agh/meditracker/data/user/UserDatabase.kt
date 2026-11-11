@@ -93,6 +93,10 @@ interface UserDao {
     @Query("SELECT * FROM history_entry ORDER BY rowId")
     fun history(): List<HistoryRow>
 
+    // także zarchiwizowane (do kopii zapasowej)
+    @Query("SELECT * FROM medication")
+    fun allMedications(): List<MedicationRow>
+
     @Upsert
     fun upsertMedication(row: MedicationRow)
 
@@ -122,6 +126,53 @@ interface UserDao {
         log?.let(::upsertDoseLog)
         deleteHistory(key.first, key.second, key.third)
         history?.let(::insertHistory)
+    }
+
+    @Query("DELETE FROM medication")
+    fun deleteAllMedications()
+
+    @Query("DELETE FROM schedule")
+    fun deleteAllSchedules()
+
+    @Query("DELETE FROM dose_log")
+    fun deleteAllDoseLogs()
+
+    @Query("DELETE FROM history_entry")
+    fun deleteAllHistory()
+
+    // bez REPLACE: duplikat klucza ma przerwać transakcję, a nie po cichu nadpisać wiersz
+    @Insert
+    fun insertMedications(rows: List<MedicationRow>)
+
+    @Insert
+    fun insertSchedules(rows: List<ScheduleRow>)
+
+    @Insert
+    fun insertDoseLogs(rows: List<DoseLogRow>)
+
+    @Insert
+    fun insertHistoryEntries(rows: List<HistoryRow>)
+
+    // spójny zrzut wszystkich tabel (jedna transakcja)
+    @Transaction
+    fun dump(settings: SyncedSettings) = Snapshot(allMedications(), schedules(), doseLogs(), history(), settings)
+
+    // podmiana całości jedną transakcją; przy błędzie zostają stare dane
+    @Transaction
+    fun replaceAll(meds: List<MedicationRow>, schedules: List<ScheduleRow>, logs: List<DoseLogRow>, history: List<HistoryRow>) {
+        wipe()
+        insertMedications(meds)
+        insertSchedules(schedules)
+        insertDoseLogs(logs)
+        insertHistoryEntries(history)
+    }
+
+    @Transaction
+    fun wipe() {
+        deleteAllHistory()
+        deleteAllDoseLogs()
+        deleteAllSchedules()
+        deleteAllMedications()
     }
 }
 

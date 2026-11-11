@@ -6,6 +6,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -36,14 +38,28 @@ class MedicationRepository(
     private val logs = MutableStateFlow(initial.logs)
     private val _history = MutableStateFlow(initial.history)
     val history: StateFlow<List<HistoryEntry>> = _history
-    private val schedules = initial.schedules.toMutableMap()
+    // podmieniane w całości przez reload()
+    @Volatile private var schedules = initial.schedules.toMutableMap()
 
     // jeden wątek naraz, więc zapisy wykonują się w kolejności wywołań
     @OptIn(ExperimentalCoroutinesApi::class)
     private val writes = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
 
+    // sygnał po każdej zaplanowanej zmianie (kopia zapasowa); reload() go nie wysyła
+    private val _changes = MutableSharedFlow<Unit>(extraBufferCapacity = 64)
+    val changes: SharedFlow<Unit> = _changes
+
+    // podmienia cały stan w pamięci (po przywróceniu kopii albo wylogowaniu); baza jest już zaktualizowana
+    fun reload(state: StoredState) {
+        schedules = state.schedules.toMutableMap()
+        logs.value = state.logs
+        _history.value = state.history
+        _medications.value = state.medications
+    }
+
     private fun persist(write: MedicationStore.() -> Unit) {
         val store = store ?: return
+        _changes.tryEmit(Unit)
         writes.launch {
             runCatching { store.write() }.onFailure { Log.e("MedicationRepository", "Zapis do bazy nie powiódł się", it) }
         }

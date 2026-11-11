@@ -1,5 +1,7 @@
 package pl.agh.meditracker.data.repository
 
+import pl.agh.meditracker.data.user.Snapshot
+import pl.agh.meditracker.data.user.SyncedSettings
 import pl.agh.meditracker.model.DoseLog
 import pl.agh.meditracker.model.HistoryEntry
 import pl.agh.meditracker.model.Medication
@@ -30,4 +32,12 @@ interface MedicationStore {
 
     // jedna transakcja: zapas leku, wpis w dzienniku dawek (null = oczekująca) i wpis historii (null = brak)
     fun saveDose(medication: Medication, date: LocalDate, time: LocalTime, log: DoseLog?, entry: HistoryEntry?)
+
+    // surowy zrzut wszystkich danych (z zarchiwizowanymi lekami) do kopii zapasowej
+    fun dump(settings: SyncedSettings): Snapshot
+
+    // podmienia wszystkie dane w jednej transakcji; przy błędzie zostają stare
+    fun replaceAll(s: Snapshot)
+
+    fun wipe()
 }

@@ -40,6 +40,12 @@ class RoomMedicationStore(private val dao: UserDao) : MedicationStore {
         )
     }
 
+    override fun dump(settings: SyncedSettings) = dao.dump(settings)
+
+    override fun replaceAll(s: Snapshot) = dao.replaceAll(s.medications, s.schedules, s.doseLogs, s.history)
+
+    override fun wipe() = dao.wipe()
+
     override fun saveMedication(medication: Medication) = dao.upsertMedication(MedicationRow(medication.toColumns()))
 
     override fun archiveMedication(id: String, at: LocalDateTime) = dao.archiveMedication(id, at.toString())
