@@ -46,7 +46,7 @@ class NavigationActionsTest {
             compose.onNode(hasText(tab) and hasClickAction()).assertIsDisplayed()
         }
         compose.onNodeWithText("Informacje o aplikacji").performScrollTo().performClick()
-        compose.onNodeWithText("MedTracker").assertIsDisplayed()
+        compose.onNodeWithText("mediTracker").assertIsDisplayed()
     }
 
     @Test fun completedDoseStatusOpensMedicationDetails() {

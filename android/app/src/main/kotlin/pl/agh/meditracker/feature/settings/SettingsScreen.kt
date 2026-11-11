@@ -71,7 +71,7 @@ fun SettingsContent(
             Text("Wygląd", style = MaterialTheme.typography.titleMedium, color = colors.onBackground)
             SettingsCard { SettingRow(R.raw.design_moon_24, "Motyw aplikacji", preferences.theme.label, { sheet = "theme" }) }
             Text("O aplikacji", style = MaterialTheme.typography.titleMedium, color = colors.onBackground)
-            SettingsCard { SettingRow(R.raw.design_info_24, "Informacje o aplikacji", "MedTracker · wersja $version", onAbout) }
+            SettingsCard { SettingRow(R.raw.design_info_24, "Informacje o aplikacji", "mediTracker · wersja $version", onAbout) }
             Caption("Leki i historia są zapisane lokalnie na tym urządzeniu.")
         }
     }

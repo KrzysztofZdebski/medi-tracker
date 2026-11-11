@@ -54,7 +54,7 @@ class NotificationController(private val context: Context) {
         try { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         catch (_: android.content.ActivityNotFoundException) {
             try { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            catch (_: android.content.ActivityNotFoundException) { Toast.makeText(context, "Otwórz ustawienia telefonu i wybierz MedTracker → Powiadomienia.", Toast.LENGTH_LONG).show() }
+            catch (_: android.content.ActivityNotFoundException) { Toast.makeText(context, "Otwórz ustawienia telefonu i wybierz mediTracker → Powiadomienia.", Toast.LENGTH_LONG).show() }
         }
     }
 

@@ -10,7 +10,7 @@
     <application
         android:name=".core.MediTrackerApp"
         android:icon="@mipmap/ic_launcher"
-        android:label="MedTracker"
+        android:label="mediTracker"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <!-- moduł skanera pobierany przez Play Services już przy instalacji -->
         <meta-data

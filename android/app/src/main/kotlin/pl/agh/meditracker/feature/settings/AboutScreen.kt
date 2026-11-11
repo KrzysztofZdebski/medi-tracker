@@ -58,7 +58,7 @@ fun AboutContent(version: String, syncing: Boolean, message: String?, onBack: ()
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             DesignBadge(R.raw.design_pill_44)
             Spacer(Modifier.height(24.dp))
-            Text("MedTracker", style = MaterialTheme.typography.headlineMedium, color = colors.onBackground)
+            Text("mediTracker", style = MaterialTheme.typography.headlineMedium, color = colors.onBackground)
             Text("Twój plan przyjmowania leków i zapas w jednym miejscu.", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
             SettingsCard {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {

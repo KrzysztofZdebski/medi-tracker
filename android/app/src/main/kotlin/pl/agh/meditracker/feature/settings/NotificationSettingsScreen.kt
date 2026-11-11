@@ -51,7 +51,7 @@ fun NotificationSettingsScreen(onBack: () -> Unit, onOpenSettings: () -> Unit) {
             else { settings.remindersEnabled = true; controller.openSettings() }
         },
         onSystemSettings = { if (!access.allowed) settings.remindersEnabled = true; controller.openSettings() },
-        onTest = { message = if (controller.show(TEST_ID, "MedTracker — powiadomienie testowe", "Powiadomienia działają. Tutaj pojawią się przypomnienia o Twoich lekach.")) "Wysłano powiadomienie testowe. Sprawdź panel powiadomień telefonu." else "Android blokuje powiadomienia. Zezwól na nie w ustawieniach." },
+        onTest = { message = if (controller.show(TEST_ID, "mediTracker — powiadomienie testowe", "Powiadomienia działają. Tutaj pojawią się przypomnienia o Twoich lekach.")) "Wysłano powiadomienie testowe. Sprawdź panel powiadomień telefonu." else "Android blokuje powiadomienia. Zezwól na nie w ustawieniach." },
         onBack = onBack, onOpenSettings = onOpenSettings, message = message,
         exactAlarmsAllowed = exactAlarms,
         onAllowExactAlarms = {

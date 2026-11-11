@@ -23,7 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.caverock.androidsvg.SVG
 
-/** Original SVG icons from the supplied MedTracker design exports. */
+/** Original SVG icons from the supplied mediTracker design exports. */
 @Composable
 fun DesignIcon(@RawRes resource: Int, size: Dp, description: String? = null, modifier: Modifier = Modifier, tint: Color? = null) {
     val context = LocalContext.current
