@@ -5,9 +5,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -132,13 +134,12 @@ class SnapshotTest {
     @Test fun reloadUpdatesFlows() = runBlocking {
         val repo = seed()
         val target = MedicationRepository(clock, otherStore)
-        otherStore.replaceAll(store.dump(settings))
         assertTrue(target.medications.value.isEmpty())
-        target.reload(otherStore.load())
+        target.replaceAllFrom(store.dump(settings))
         assertEquals(repo.medications.value, target.medications.value)
         assertEquals(repo.history.value, target.history.value)
         assertEquals(repo.dosesFor(today).first(), target.dosesFor(today).first())
-        target.reload(StoredState())
+        target.wipeAll()
         assertTrue(target.medications.value.isEmpty() && target.history.value.isEmpty())
         assertTrue(target.dosesFor(today).first().isEmpty())
     }
@@ -149,10 +150,52 @@ class SnapshotTest {
         val job = launch(Dispatchers.Unconfined) { repo.changes.collect { emissions += it } }
         repo.add(metformina)
         assertEquals(1, emissions.size)
-        repo.reload(StoredState())
+        repo.wipeAll()
         assertEquals(1, emissions.size)
         job.cancel()
         repo.awaitWrites()
+    }
+
+    @Test fun queuedWriteBeforeWipeDoesNotResurrect() = runBlocking {
+        val repo = MedicationRepository(clock, store)
+        repeat(20) { repo.add(metformina.copy(name = "Lek $it")) }
+        repo.wipeAll()
+        assertEquals(StoredState(), store.load())
+        assertTrue(store.dump(settings).medications.isEmpty())
+        assertTrue(repo.medications.value.isEmpty())
+        assertTrue(repo.dosesFor(today).first().isEmpty())
+    }
+
+    @Test fun queuedWriteBeforeReplaceAllDoesNotLeak() = runBlocking {
+        seed()
+        val snapshot = store.dump(settings)
+        val repo = MedicationRepository(clock, otherStore)
+        repeat(20) { repo.add(metformina.copy(name = "Lek $it")) }
+        repo.replaceAllFrom(snapshot)
+        assertEquals(snapshot, otherStore.dump(settings))
+        assertEquals(otherStore.load().medications, repo.medications.value)
+        assertEquals(2, snapshot.medications.size)
+    }
+
+    @Test fun dosesForNeverThrowsDuringConcurrentReload() = runBlocking {
+        seed()
+        val full = store.dump(settings)
+        val repo = MedicationRepository(clock, otherStore)
+        var failure: Throwable? = null
+        var last: List<pl.agh.meditracker.model.Dose> = emptyList()
+        val collector = launch(Dispatchers.Default) {
+            try { repo.dosesFor(today).collect { last = it } } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Throwable) { failure = e }
+        }
+        withContext(Dispatchers.Default) {
+            repeat(200) { if (it % 2 == 0) repo.replaceAllFrom(full) else repo.wipeAll() }
+            repo.replaceAllFrom(full)
+        }
+        val expected = repo.dosesFor(today).first()
+        kotlinx.coroutines.delay(200)
+        collector.cancel()
+        assertNull(failure)
+        assertEquals(expected, last)
+        assertTrue(expected.isNotEmpty())
     }
 
     @Test fun syncedSettingsRoundTripAndReset() = runBlocking {

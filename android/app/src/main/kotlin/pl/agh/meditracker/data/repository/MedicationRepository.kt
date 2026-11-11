@@ -5,7 +5,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,6 +17,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import pl.agh.meditracker.data.user.Snapshot
+import pl.agh.meditracker.data.user.SyncedSettings
 import pl.agh.meditracker.model.Dose
 import pl.agh.meditracker.model.DoseLog
 import pl.agh.meditracker.model.DoseStatus
@@ -32,14 +38,29 @@ class MedicationRepository(
     private val store: MedicationStore? = null,
     initial: StoredState = StoredState(),
 ) {
-    private val _medications = MutableStateFlow(initial.medications)
-    val medications: StateFlow<List<Medication>> = _medications
+    // leki i wersje ich harmonogramów w jednym stanie, żeby nikt nie zobaczył niespójnej pary
+    private data class Core(
+        val medications: List<Medication>,
+        val schedules: Map<String, List<Pair<LocalDateTime, Schedule>>>,
+    )
+
+    private val core = MutableStateFlow(Core(initial.medications, initial.schedules))
+
+    // widok samych leków nad stanem core; value zawsze zgodne z core
+    val medications: StateFlow<List<Medication>> = object : StateFlow<List<Medication>> {
+        override val value: List<Medication> get() = core.value.medications
+        override val replayCache: List<List<Medication>> get() = listOf(value)
+        override suspend fun collect(collector: FlowCollector<List<Medication>>): Nothing {
+            core.map { it.medications }.distinctUntilChanged().collect(collector)
+            throw IllegalStateException("StateFlow collect nie kończy się")
+        }
+    }
 
     private val logs = MutableStateFlow(initial.logs)
     private val _history = MutableStateFlow(initial.history)
     val history: StateFlow<List<HistoryEntry>> = _history
-    // podmieniane w całości przez reload()
-    @Volatile private var schedules = initial.schedules.toMutableMap()
+
+    private fun schedulesOf(id: String) = core.value.schedules[id]
 
     // jeden wątek naraz, więc zapisy wykonują się w kolejności wywołań
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -49,12 +70,30 @@ class MedicationRepository(
     private val _changes = MutableSharedFlow<Unit>(extraBufferCapacity = 64)
     val changes: SharedFlow<Unit> = _changes
 
-    // podmienia cały stan w pamięci (po przywróceniu kopii albo wylogowaniu); baza jest już zaktualizowana
-    fun reload(state: StoredState) {
-        schedules = state.schedules.toMutableMap()
+    // zastępuje cały stan w pamięci; wołane tylko z kolejki zapisów, po zmianie bazy
+    private fun reload(state: StoredState) {
         logs.value = state.logs
         _history.value = state.history
-        _medications.value = state.medications
+        core.value = Core(state.medications, state.schedules)
+    }
+
+    // Operacje na całej bazie idą tą samą kolejką co zapisy: wykonują się po wszystkich wcześniejszych
+    // i przed późniejszymi, więc zaległy zapis nie wskrzesi starych wierszy.
+    private suspend fun <T> serialized(block: MedicationStore.() -> T): T {
+        val store = checkNotNull(store) { "Brak bazy" }
+        return writes.async { store.block() }.await()
+    }
+
+    suspend fun dumpSnapshot(settings: SyncedSettings): Snapshot = serialized { dump(settings) }
+
+    suspend fun replaceAllFrom(s: Snapshot) = serialized {
+        replaceAll(s)
+        reload(load())
+    }
+
+    suspend fun wipeAll() = serialized {
+        wipe()
+        reload(StoredState())
     }
 
     private fun persist(write: MedicationStore.() -> Unit) {
@@ -69,25 +108,25 @@ class MedicationRepository(
     suspend fun awaitWrites() = writes.launch {}.join()
 
     fun update(medication: Medication) {
-        val previous = _medications.value.find { it.id == medication.id } ?: return
+        val previous = medications.value.find { it.id == medication.id } ?: return
         if (previous.schedule != medication.schedule) {
-            val versions = schedules.getValue(medication.id) + (LocalDateTime.now(clock) to medication.schedule)
-            schedules[medication.id] = versions
+            val versions = schedulesOf(medication.id).orEmpty() + (LocalDateTime.now(clock) to medication.schedule)
+            core.update { it.copy(schedules = it.schedules + (medication.id to versions)) }
             persist { saveSchedule(medication.id, versions.lastIndex, versions.last().first, medication.schedule) }
         }
-        _medications.update { list -> list.map { if (it.id == medication.id) medication else it } }
+        core.update { c -> c.copy(medications = c.medications.map { if (it.id == medication.id) medication else it }) }
         persist { saveMedication(medication) }
     }
 
     fun remove(id: String) {
-        _medications.update { list -> list.filterNot { it.id == id } }
+        core.update { c -> c.copy(medications = c.medications.filterNot { it.id == id }) }
         val at = LocalDateTime.now(clock)
         persist { archiveMedication(id, at) }
     }
 
-    fun dosesFor(date: LocalDate): Flow<List<Dose>> = combine(_medications, logs) { meds, logs ->
-        meds.flatMap { med ->
-            val versions = schedules.getValue(med.id)
+    fun dosesFor(date: LocalDate): Flow<List<Dose>> = combine(core, logs) { state, logs ->
+        state.medications.flatMap { med ->
+            val versions = state.schedules[med.id] ?: return@flatMap emptyList()
             val times = versions.flatMap { it.second.times }.distinct()
             times.mapNotNull { time ->
                 val schedule = versions.last { !it.first.isAfter(LocalDateTime.of(date, time)) }.second
@@ -100,8 +139,7 @@ class MedicationRepository(
 
     fun add(medication: Medication): Medication {
         val saved = medication.copy(id = UUID.randomUUID().toString())
-        schedules[saved.id] = listOf(LocalDateTime.MIN to saved.schedule)
-        _medications.update { it + saved }
+        core.update { it.copy(medications = it.medications + saved, schedules = it.schedules + (saved.id to listOf(LocalDateTime.MIN to saved.schedule))) }
         persist {
             saveMedication(saved)
             saveSchedule(saved.id, 0, LocalDateTime.MIN, saved.schedule)
@@ -112,7 +150,7 @@ class MedicationRepository(
     fun refill(medicationId: String, amount: Int) {
         if (amount <= 0) return
         changeStock(medicationId, amount)
-        val med = _medications.value.find { it.id == medicationId } ?: return
+        val med = medications.value.find { it.id == medicationId } ?: return
         persist { saveMedication(med) }
     }
 
@@ -124,14 +162,14 @@ class MedicationRepository(
         snoozedUntil: LocalTime? = null,
     ) {
         val previous = logs.value.find { it.medicationId == medicationId && it.date == date && it.time == time }
-        val med = _medications.value.find { it.id == medicationId } ?: return
+        val med = medications.value.find { it.id == medicationId } ?: return
         if (previous?.status == status && previous.snoozedUntil == snoozedUntil) return
         val oldEntry = _history.value.find { it.medication.id == medicationId && it.date == date && it.time == time }
-        val schedule = schedules.getValue(med.id).last { !it.first.isAfter(LocalDateTime.of(date, time)) }.second
+        val schedule = (schedulesOf(med.id) ?: return).last { !it.first.isAfter(LocalDateTime.of(date, time)) }.second
         val qty = schedule.doseQty
         if (previous?.status == DoseStatus.Taken) changeStock(medicationId, oldEntry?.medication?.schedule?.doseQty ?: qty)
         if (status == DoseStatus.Taken) changeStock(medicationId, -qty)
-        val updated = _medications.value.first { it.id == medicationId }
+        val updated = medications.value.first { it.id == medicationId }
         val entry = if (status == DoseStatus.Taken || status == DoseStatus.Skipped) {
             HistoryEntry(med.copy(schedule = schedule), date, time, status, LocalDateTime.now(clock), updated.stock)
         } else null
@@ -143,7 +181,7 @@ class MedicationRepository(
         persist { saveDose(updated, date, time, log, entry) }
     }
 
-    private fun changeStock(medicationId: String, delta: Int) = _medications.update { list ->
-        list.map { if (it.id == medicationId) it.copy(stock = (it.stock + delta).coerceAtLeast(0)) else it }
+    private fun changeStock(medicationId: String, delta: Int) = core.update { c ->
+        c.copy(medications = c.medications.map { if (it.id == medicationId) it.copy(stock = (it.stock + delta).coerceAtLeast(0)) else it })
     }
 }
