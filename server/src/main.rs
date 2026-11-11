@@ -5,7 +5,8 @@ use meditracker_server::{
     config::{Config, EmailMode},
     init_db,
     limits::Limits,
-    mailer::{LogMailer, Mailer},
+    mailer::{LogMailer, Mailer, SmtpMailer},
+    routes::register::purge_unverified,
     system_clock, AppState,
 };
 
@@ -22,7 +23,18 @@ async fn main() -> anyhow::Result<()> {
     let db = init_db(&config.database_url).await?;
     let mailer: Arc<dyn Mailer> = match config.email_mode {
         EmailMode::Log => Arc::new(LogMailer),
-        EmailMode::Smtp => anyhow::bail!("EMAIL_MODE=smtp is not implemented yet"),
+        EmailMode::Smtp => {
+            let need = |v: &Option<String>, name: &str| {
+                v.clone()
+                    .ok_or_else(|| anyhow::anyhow!("{name} is required when EMAIL_MODE=smtp"))
+            };
+            Arc::new(SmtpMailer::new(
+                &need(&config.smtp_host, "SMTP_HOST")?,
+                &need(&config.smtp_user, "SMTP_USER")?,
+                &need(&config.smtp_pass, "SMTP_PASS")?,
+                &need(&config.smtp_from, "SMTP_FROM")?,
+            )?)
+        }
     };
     let bind = config.bind;
     let state = AppState {
@@ -32,6 +44,17 @@ async fn main() -> anyhow::Result<()> {
         limits: Arc::new(Limits::new()),
         clock: system_clock(),
     };
+    let purge_state = state.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            tick.tick().await;
+            let now = (purge_state.clock)();
+            if purge_unverified(&purge_state, now).await.is_err() {
+                tracing::error!("purging unverified accounts failed");
+            }
+        }
+    });
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!("listening on {bind}");
     axum::serve(listener, app(state)).await?;

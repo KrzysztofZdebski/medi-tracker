@@ -2,6 +2,8 @@ pub mod config;
 pub mod error;
 pub mod limits;
 pub mod mailer;
+pub mod routes;
+pub mod secrets;
 
 use std::{str::FromStr, sync::Arc, time::Duration};
 
@@ -69,6 +71,7 @@ pub fn app(state: AppState) -> Router {
 
     Router::new()
         .route("/health", get(|| async { "ok" }))
+        .merge(routes::router())
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(trace)
         .with_state(state)
