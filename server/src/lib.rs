@@ -4,6 +4,7 @@ pub mod limits;
 pub mod mailer;
 pub mod routes;
 pub mod secrets;
+pub mod session;
 
 use std::{str::FromStr, sync::Arc, time::Duration};
 

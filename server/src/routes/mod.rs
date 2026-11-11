@@ -1,3 +1,5 @@
+pub mod backup;
+pub mod login;
 pub mod register;
 
 use axum::{body::Bytes, Router};
@@ -15,6 +17,8 @@ pub const SESSION_TTL_SECS: i64 = 90 * 24 * 3600;
 
 pub fn router() -> Router<AppState> {
     register::router()
+        .merge(login::router())
+        .merge(backup::router())
 }
 
 /// Parses a JSON body, mapping every failure (malformed, missing fields) to `invalid_input`.
