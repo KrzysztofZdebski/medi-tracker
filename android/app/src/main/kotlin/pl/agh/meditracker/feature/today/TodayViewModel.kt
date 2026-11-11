@@ -107,6 +107,9 @@ class TodayViewModel(
         overlay.update { if (it.feedback == feedback) Overlay(sheet = it.sheet.takeUnless { s -> s is TodaySheet.LowStock }) else it }
     }
 
+    // snackbar wygasł: baner nie może wracać po powrocie na zakładkę; arkusz zostaje
+    fun clearFeedback(feedback: TodayFeedback) = overlay.update { if (it.feedback == feedback) it.copy(feedback = null) else it }
+
     fun skip(dose: Dose) {
         repository.setDoseStatus(dose.medication.id, dose.date, dose.time, DoseStatus.Skipped)
         overlay.value = Overlay(feedback = TodayFeedback.Skipped(dose))

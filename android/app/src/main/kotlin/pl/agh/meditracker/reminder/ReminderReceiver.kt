@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.CoroutineScope
@@ -69,6 +70,7 @@ class ReminderReceiver : BroadcastReceiver() {
     private fun show(context: Context, dose: Dose, code: Int) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val reminder = reminderFor(dose, dose.date.atTime(dose.time))
+        val med = dose.medication
         NotificationController(context).ensureChannel()
         val open = Intent(context, MainActivity::class.java)
             .setAction(Intent.ACTION_MAIN)
@@ -81,8 +83,8 @@ class ReminderReceiver : BroadcastReceiver() {
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+            .addExtras(Bundle().apply { putString(EXTRA_MEDICATION_ID, med.id) })
             .setContentIntent(PendingIntent.getActivity(context, code, open, PendingIntent.FLAG_IMMUTABLE))
-        val med = dose.medication
         if (med.stock >= med.schedule.doseQty) builder.addAction(0, "Przyjęte", action(context, ACTION_TAKE, reminder))
         else builder.setSubText("Brak zapasu")
         builder.addAction(0, "Odłóż ${(context.applicationContext as MediTrackerApp).container.settings.snoozeMinutes} min", action(context, ACTION_SNOOZE, reminder))
@@ -100,6 +102,8 @@ class ReminderReceiver : BroadcastReceiver() {
         const val ACTION_REMIND = "pl.agh.meditracker.REMIND"
         const val ACTION_TAKE = "pl.agh.meditracker.TAKE"
         const val ACTION_SNOOZE = "pl.agh.meditracker.SNOOZE"
+        // klucz w extras powiadomienia: po nim scheduler znajduje powiadomienia usuniętych leków
+        const val EXTRA_MEDICATION_ID = "medicationId"
         private const val EXTRA_MEDICATION = "medication"
         private const val EXTRA_DATE = "date"
         private const val EXTRA_TIME = "time"

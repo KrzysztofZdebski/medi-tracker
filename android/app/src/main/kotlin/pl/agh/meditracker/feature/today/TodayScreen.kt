@@ -23,7 +23,9 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -58,7 +60,12 @@ fun TodayScreen(onAddMedication: () -> Unit, onOpenHistory: () -> Unit, onNotifi
     LaunchedEffect(taken) {
         if (taken == null) return@LaunchedEffect
         val result = snackbar.showSnackbar("Zapisano przyjęcie", "Cofnij", duration = SnackbarDuration.Short)
-        if (result == SnackbarResult.ActionPerformed) viewModel.undo(taken)
+        if (result == SnackbarResult.ActionPerformed) viewModel.undo(taken) else viewModel.clearFeedback(taken)
+    }
+    // ViewModel przeżywa zmianę zakładki, więc po powrocie nie pokazujemy starego banera o pominięciu lub odroczeniu
+    val latest by rememberUpdatedState(state.feedback)
+    DisposableEffect(Unit) {
+        onDispose { latest?.takeUnless { it is TodayFeedback.Taken }?.let(viewModel::clearFeedback) }
     }
     Scaffold(
         topBar = { AppTopBar("Dzisiaj", actions = { NotificationsAction(onClick = onNotifications) }) },

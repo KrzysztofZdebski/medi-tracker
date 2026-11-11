@@ -21,6 +21,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowAlarmManager
 import pl.agh.meditracker.core.AppContainer
 import pl.agh.meditracker.core.MediTrackerApp
+import pl.agh.meditracker.data.notifications.NotificationController
 import pl.agh.meditracker.data.repository.MedicationRepository
 import pl.agh.meditracker.data.settings.SettingsStore
 import pl.agh.meditracker.model.Dose
@@ -153,6 +154,33 @@ class ReminderReceiverTest {
         container.medications.setDoseStatus(med.id, today, eight, DoseStatus.Skipped)
         ReminderReceiver().onReceive(app, remind(med))
         assertTrue(notifications.allNotifications.isEmpty())
+    }
+
+    // alarm już zadziałał (kod nie jest „wanted”), więc powiadomienie znika tylko wraz z lekiem
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun deletingMedicationRemovesItsShownNotificationOnly() = runTest {
+        val med = setUp()
+        val other = container.medications.add(medication(today))
+        ReminderReceiver().onReceive(app, remind(med))
+        ReminderReceiver().onReceive(app, remind(other))
+        assertEquals(2, notifications.size())
+        ReminderScheduler(app, container.medications, container.settings).start(backgroundScope)
+        runCurrent()
+        assertEquals(2, notifications.size())
+
+        container.medications.remove(med.id)
+        runCurrent()
+        val left = app.getSystemService(NotificationManager::class.java).activeNotifications.single()
+        assertEquals(other.id, left.notification.extras.getString("medicationId"))
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun notificationWithoutMedicationIdSurvivesScheduler() = runTest {
+        setUp()
+        NotificationController(app).show(1, "Test", "Test")
+        ReminderScheduler(app, container.medications, container.settings).start(backgroundScope)
+        runCurrent()
+        assertEquals(1, notifications.size())
     }
 
     @Test fun noTakeActionWithoutStock() {
