@@ -103,13 +103,22 @@ async fn get_with_wiped_blob_nulls_fields_but_version_still_gates_writes() {
     let (_, body) = app.get("/backup", Some(&token)).await;
     assert_eq!(
         body,
-        json!({"version": null, "epoch": epoch, "nonce": null, "ciphertext": null, "updated_at": null})
+        json!({"version": 1, "epoch": epoch, "nonce": null, "ciphertext": null, "updated_at": null})
     );
+    // A PUT based on the version GET reported succeeds.
+    let (status, body) = app.put("/backup", put_body(epoch, body["version"].as_i64(), b"y"), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({"version": 2}));
+    sqlx::query("UPDATE backups SET nonce = NULL, ciphertext = NULL, updated_at = NULL WHERE user_id = ?")
+        .bind(&user_id)
+        .execute(&app.db)
+        .await
+        .unwrap();
     let (status, body) = app.put("/backup", put_body(epoch, None, b"x"), Some(&token)).await;
     assert_eq!(status, StatusCode::CONFLICT);
-    assert_eq!(body["version"], 1);
-    let (_, body) = app.put("/backup", put_body(epoch, Some(1), b"x"), Some(&token)).await;
-    assert_eq!(body, json!({"version": 2}));
+    assert_eq!(body["version"], 2);
+    let (_, body) = app.put("/backup", put_body(epoch, Some(2), b"x"), Some(&token)).await;
+    assert_eq!(body, json!({"version": 3}));
 }
 
 #[tokio::test]

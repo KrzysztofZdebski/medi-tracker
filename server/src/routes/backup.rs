@@ -62,32 +62,26 @@ async fn get_backup(
     .bind(&session.user_id)
     .fetch_optional(&state.db)
     .await?;
-    let blob = row.and_then(|r| {
-        let nonce: Option<Vec<u8>> = r.get("nonce");
-        let ciphertext: Option<Vec<u8>> = r.get("ciphertext");
-        Some((
-            r.get::<i64, _>("version"),
-            nonce?,
-            ciphertext?,
-            r.get::<Option<i64>, _>("updated_at"),
-        ))
-    });
-    Ok(Json(match blob {
-        Some((version, nonce, ciphertext, updated_at)) => json!({
-            "version": version,
-            "epoch": epoch,
-            "nonce": STANDARD.encode(nonce),
-            "ciphertext": STANDARD.encode(ciphertext),
-            "updated_at": updated_at,
-        }),
-        None => json!({
+    // A wiped row keeps its version counter; only the blob fields are null.
+    let Some(row) = row else {
+        return Ok(Json(json!({
             "version": null,
             "epoch": epoch,
             "nonce": null,
             "ciphertext": null,
             "updated_at": null,
-        }),
-    }))
+        })));
+    };
+    let nonce: Option<Vec<u8>> = row.get("nonce");
+    let ciphertext: Option<Vec<u8>> = row.get("ciphertext");
+    let has_blob = nonce.is_some() && ciphertext.is_some();
+    Ok(Json(json!({
+        "version": row.get::<i64, _>("version"),
+        "epoch": epoch,
+        "nonce": nonce.filter(|_| has_blob).map(|n| STANDARD.encode(n)),
+        "ciphertext": ciphertext.filter(|_| has_blob).map(|c| STANDARD.encode(c)),
+        "updated_at": row.get::<Option<i64>, _>("updated_at").filter(|_| has_blob),
+    })))
 }
 
 async fn put_backup(
