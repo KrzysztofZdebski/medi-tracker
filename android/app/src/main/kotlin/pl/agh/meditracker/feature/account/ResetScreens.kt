@@ -45,7 +45,10 @@ fun ResetCodeScreen(viewModel: AuthViewModel, onBack: () -> Unit, onVerified: ()
 
 @Composable
 fun ResetRecoveryScreen(viewModel: AuthViewModel, onBack: () -> Unit, onCodeAccepted: () -> Unit, onNoCode: () -> Unit) {
-    LaunchedEffect(Unit) { viewModel.clearError() }
+    LaunchedEffect(Unit) {
+        viewModel.clearError()
+        viewModel.cancelNoRecoveryCode()
+    }
     ResetRecoveryContent(
         busy = viewModel.busy, error = viewModel.error, onBack = onBack,
         onSubmit = { viewModel.checkRecoveryCode(it, onCodeAccepted) },

@@ -11,13 +11,13 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.ModalBottomSheetProperties
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -32,12 +32,30 @@ import pl.agh.meditracker.data.account.api.ApiError
 import pl.agh.meditracker.data.account.api.ApiResult
 import pl.agh.meditracker.ui.components.AlertTone
 import pl.agh.meditracker.ui.components.AppAlert
+import pl.agh.meditracker.ui.components.AppTextButton
 import pl.agh.meditracker.ui.components.IconBadge
 import pl.agh.meditracker.ui.components.PrimaryButton
 import pl.agh.meditracker.ui.components.SecondaryButton
 
 class RestoreChoiceViewModel(private val backup: BackupSync) : ViewModel() {
     val choice = backup.pendingChoice
+
+    /**
+     * R23: "Później" chowa pytanie, ale niczego nie rozstrzyga (decisionPending zostaje, nic nie jest wysyłane); wraca przy
+     * następnym starcie aplikacji. Zapisane w ViewModelu aktywności, więc ustawienia (Task 13) mogą je otworzyć
+     * ponownie przez [reopen].
+     */
+    var postponed by mutableStateOf(false)
+        private set
+
+    fun postpone() {
+        if (!busy) postponed = true
+    }
+
+    /** Pokazuje odłożone pytanie jeszcze raz (wiersz "Wybierz, które dane zachować" w ustawieniach). */
+    fun reopen() {
+        postponed = false
+    }
     var busy by mutableStateOf(false)
         private set
     var error by mutableStateOf<ApiError?>(null)
@@ -67,18 +85,21 @@ class RestoreChoiceViewModel(private val backup: BackupSync) : ViewModel() {
 fun RestoreChoiceHost() {
     val viewModel = appViewModel { RestoreChoiceViewModel(it.backup) }
     val choice by viewModel.choice.collectAsState()
-    choice?.let {
-        RestoreChoiceSheet(it, viewModel.busy, viewModel.error, viewModel::choose)
+    // nowe pytanie (kolejne logowanie) nie dziedziczy odłożenia po poprzednim
+    LaunchedEffect(choice == null) { if (choice == null) viewModel.reopen() }
+    val current = choice
+    if (current != null && !viewModel.postponed) {
+        RestoreChoiceSheet(current, viewModel.busy, viewModel.error, viewModel::postpone, viewModel::choose)
     }
 }
 
 /**
  * Domyślny (pierwszy) przycisk to zawsze „przywróć” albo „zacznij z pustym kontem”: nie nadpisuje niczego, czego
- * użytkownik nie wybrał wprost. Sheet nie zamyka się gestem ani przyciskiem wstecz, bo do decyzji dane nie są wysyłane.
+ * użytkownik nie wybrał wprost. „Później” (także gest i wstecz) tylko chowa pytanie: bez sieci nie może blokować aplikacji (R23).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RestoreChoiceSheet(choice: AfterLogin.NeedsChoice, busy: Boolean, error: ApiError?, onChoose: (restore: Boolean) -> Unit) {
+fun RestoreChoiceSheet(choice: AfterLogin.NeedsChoice, busy: Boolean, error: ApiError?, onLater: () -> Unit, onChoose: (restore: Boolean) -> Unit) {
     val withBackup = choice.accountHasBackup
     val explanation = when {
         choice.fromOtherAccount && withBackup ->
@@ -92,10 +113,9 @@ fun RestoreChoiceSheet(choice: AfterLogin.NeedsChoice, busy: Boolean, error: Api
     val restoreNote = if (withBackup) "Dane na telefonie zostaną zastąpione danymi z konta." else "Dane z tego telefonu znikną, a konto zostanie puste."
     val keepNote = if (withBackup) "Kopia na koncie zostanie zastąpiona danymi z tego telefonu." else "Dane z tego telefonu staną się kopią na koncie."
     ModalBottomSheet(
-        onDismissRequest = {},
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { it != SheetValue.Hidden }),
+        onDismissRequest = onLater,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surface,
-        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
     ) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
@@ -116,6 +136,7 @@ fun RestoreChoiceSheet(choice: AfterLogin.NeedsChoice, busy: Boolean, error: Api
             Text(restoreNote, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             SecondaryButton(keepLabel, { onChoose(false) }, enabled = !busy)
             Text(keepNote, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            AppTextButton("Później", onLater, Modifier.align(Alignment.CenterHorizontally), enabled = !busy)
         }
     }
 }

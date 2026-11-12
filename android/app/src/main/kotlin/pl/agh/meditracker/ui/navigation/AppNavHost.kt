@@ -1,5 +1,6 @@
 package pl.agh.meditracker.ui.navigation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -93,7 +94,7 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
     @Composable
     fun authViewModel(e: NavBackStackEntry): AuthViewModel {
         val owner = remember(e) { nav.getBackStackEntry(AUTH) }
-        return appViewModel(owner) { AuthViewModel(it.account, it.backup) }
+        return appViewModel(owner) { AuthViewModel(it.account) { it.backup.afterLogin() } }
     }
 
     fun NavBackStackEntry.from() = arguments?.getString("from") ?: coldFrom
@@ -142,12 +143,18 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
                         val from = e.from()
                         VerifyEmailScreen(
                             authViewModel(e),
-                            onVerified = { replaceWith(READY, from, VERIFY) },
+                            // z U04 nie ma powrotu do wypełnionej rejestracji, a konto jest już utworzone
+                            onVerified = {
+                                val hasRegister = runCatching { nav.getBackStackEntry(authPattern(REGISTER)) }.isSuccess
+                                replaceWith(READY, from, if (hasRegister) REGISTER else VERIFY)
+                            },
                             onChangeEmail = { replaceWith(REGISTER, from, VERIFY) },
                         )
                     }
                     composable(authPattern(READY), fromArg) { e ->
                         val from = e.from()
+                        // Wstecz z U04 prowadzi do zapisania kodu, nie z powrotem do rejestracji
+                        BackHandler { replaceWith(RECOVERY_CODE, from, READY) }
                         AccountReadyScreen(authViewModel(e), onNext = { replaceWith(RECOVERY_CODE, from, READY) })
                     }
                     composable(authPattern(RECOVERY_CODE), fromArg) { e ->

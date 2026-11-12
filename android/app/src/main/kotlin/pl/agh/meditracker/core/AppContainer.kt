@@ -17,6 +17,10 @@ import okhttp3.OkHttpClient
 import pl.agh.meditracker.BuildConfig
 import pl.agh.meditracker.data.account.AccountRepository
 import pl.agh.meditracker.data.account.AccountStore
+import pl.agh.meditracker.data.account.KdfBounds
+import pl.agh.meditracker.data.account.SecretBox
+import pl.agh.meditracker.data.account.api.AccountApi
+import pl.agh.meditracker.data.account.crypto.KdfParams
 import pl.agh.meditracker.data.account.BackupSync
 import pl.agh.meditracker.data.account.KeystoreSecretBox
 import pl.agh.meditracker.data.account.api.HttpAccountApi
@@ -28,7 +32,14 @@ import pl.agh.meditracker.data.user.UserDatabase
 import pl.agh.meditracker.reminder.ReminderScheduler
 import java.time.Clock
 
-class AppContainer(context: Context) {
+// accountApi, secretBox i parametry KDF podmieniają tylko testy (serwer w pamięci, Argon2 w miniaturze)
+class AppContainer(
+    context: Context,
+    private val accountApi: AccountApi = HttpAccountApi(BuildConfig.SERVER_URL, OkHttpClient()),
+    secretBox: SecretBox = KeystoreSecretBox(),
+    kdf: KdfParams = KdfParams(),
+    kdfBounds: KdfBounds = KdfBounds(),
+) {
     private val store = RoomMedicationStore(UserDatabase.open(context).dao())
 
     // Wczytanie przed pierwszym ekranem i przed obsługą alarmu w zimnym procesie; to kilka małych tabel.
@@ -39,9 +50,8 @@ class AppContainer(context: Context) {
     val reminders = ReminderScheduler(context, medications, settings)
 
     // konstrukcja bez sieci; Keystore dopiero przy pierwszym odczycie lub zapisie sekretu
-    private val accountApi = HttpAccountApi(BuildConfig.SERVER_URL, OkHttpClient())
-    private val accountStore = AccountStore(context.getSharedPreferences("account", Context.MODE_PRIVATE), KeystoreSecretBox())
-    val account = AccountRepository(accountApi, accountStore)
+    private val accountStore = AccountStore(context.getSharedPreferences("account", Context.MODE_PRIVATE), secretBox)
+    val account = AccountRepository(accountApi, accountStore, kdf = kdf, kdfBounds = kdfBounds)
 
     // kopia zapasowa rusza dopiero w start() (MediTrackerApp.onCreate), więc sama konstrukcja nie sięga do sieci
     val backup = BackupSync(

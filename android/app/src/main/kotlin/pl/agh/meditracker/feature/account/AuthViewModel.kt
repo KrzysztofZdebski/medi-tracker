@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import pl.agh.meditracker.data.account.AccountRepository
 import pl.agh.meditracker.data.account.AccountState
-import pl.agh.meditracker.data.account.BackupSync
 import pl.agh.meditracker.data.account.api.ApiError
 import pl.agh.meditracker.data.account.api.ApiResult
 import pl.agh.meditracker.data.account.crypto.RecoveryCode
@@ -31,7 +30,10 @@ internal fun ApiError.toAuthError() = when (this) {
  * graf "auth", więc e-mail resetu i nowy kod z resetu bez kodu przechodzą między ekranami. Argon2 trwa ułamek
  * sekundy, więc [busy] blokuje przyciski i pokazuje postęp (U11).
  */
-class AuthViewModel(private val account: AccountRepository, private val backup: BackupSync) : ViewModel() {
+class AuthViewModel(
+    private val account: AccountRepository,
+    private val afterLogin: suspend () -> Unit,
+) : ViewModel() {
     var busy by mutableStateOf(false)
         private set
     var error by mutableStateOf<AuthError?>(null)
@@ -110,7 +112,7 @@ class AuthViewModel(private val account: AccountRepository, private val backup: 
         if (busy) return password.fill('\u0000')
         launchOp {
             account.login(email, password).ifOk {
-                backup.afterLogin() // wynik niesie pendingChoice
+                afterLogin() // wynik niesie pendingChoice
                 onDone()
             }
         }
@@ -135,11 +137,22 @@ class AuthViewModel(private val account: AccountRepository, private val backup: 
     }
 
     fun checkRecoveryCode(input: String, onDone: () -> Unit) = launchOp {
-        if (account.checkRecoveryCode(input)) onDone() else error = AuthError.WrongRecoveryCode
+        if (account.checkRecoveryCode(input)) {
+            // poprawny kod = zwykły reset z zachowaniem kopii, także gdy wcześniej wybrano "Nie mam kodu" i cofnięto się
+            wipePath = false
+            onDone()
+        } else {
+            error = AuthError.WrongRecoveryCode
+        }
     }
 
     fun chooseNoRecoveryCode() {
         wipePath = true
+    }
+
+    /** Powrót na ekran kodu odzyskiwania odwołuje wybór "Nie mam kodu", żeby Wstecz z U07 nie zostawił ścieżki kasującej kopię. */
+    fun cancelNoRecoveryCode() {
+        wipePath = false
     }
 
     /** Nowe hasło: z kodem odzyskiwania ([wipePath] false) albo z nowym DEK i kodem. [onDone] dostaje true, gdy jest nowy kod do pokazania. */

@@ -10,6 +10,7 @@ import android.os.PersistableBundle
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -90,12 +91,18 @@ fun RecoveryCodeContent(code: RecoveryCode, busy: Boolean, onCopy: () -> Unit, o
             Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = colors.surface,
             border = BorderStroke(1.dp, colors.outlineVariant),
         ) {
-            Text(
-                code.display(),
-                Modifier.padding(horizontal = 12.dp, vertical = 24.dp),
-                style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace, fontSize = 18.sp, letterSpacing = 0.sp, fontWeight = FontWeight.Medium),
-                color = colors.onSurface, textAlign = TextAlign.Center,
-            )
+            // 26 znaków w 7 grupach: dwie stałe linie (4 + 3 grupy), żeby kod nigdy nie łamał się w środku grupy
+            val groups = code.display().split("-")
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(groups.take(4), groups.drop(4)).forEach { line ->
+                    Text(
+                        line.joinToString("-"),
+                        Modifier.fillMaxWidth(),
+                        style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace, fontSize = 22.sp, letterSpacing = 0.sp, fontWeight = FontWeight.Medium),
+                        color = colors.onSurface, textAlign = TextAlign.Center, maxLines = 1,
+                    )
+                }
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SecondaryButton(if (copied) "Skopiowano" else "Kopiuj", { copied = true; onCopy() }, Modifier.weight(1f))

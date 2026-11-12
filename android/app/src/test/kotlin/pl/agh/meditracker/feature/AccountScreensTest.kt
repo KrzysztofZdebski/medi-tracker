@@ -130,7 +130,11 @@ class AccountScreensTest {
         var next = false
         show { RecoveryCodeContent(code, false, {}, {}, { next = true }) }
         screenshot("account-recovery-code")
-        compose.onNodeWithText(code.display()).assertIsDisplayed()
+        // 26 znaków w 7 grupach: zawsze dwie stałe linie (4 + 3 grupy), nigdy łamanie w środku grupy
+        val groups = code.display().split("-")
+        assertEquals(7, groups.size)
+        compose.onNodeWithText(groups.take(4).joinToString("-")).assertIsDisplayed()
+        compose.onNodeWithText(groups.drop(4).joinToString("-")).assertIsDisplayed()
         compose.onNodeWithText("Dalej").assertIsNotEnabled()
         compose.onNodeWithText("Zapisałem kod").performClick()
         compose.onNodeWithText("Dalej").assertIsEnabled().performClick()
@@ -254,7 +258,7 @@ class AccountScreensTest {
 
     @Test fun restoreChoiceSheetDefaultsToRestoreForOtherAccount() {
         val choices = mutableListOf<Boolean>()
-        show { RestoreChoiceSheet(AfterLogin.NeedsChoice(fromOtherAccount = true), false, null) { choices += it } }
+        show { RestoreChoiceSheet(AfterLogin.NeedsChoice(fromOtherAccount = true), false, null, {}) { choices += it } }
         compose.onNodeWithText("innego konta", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Zachowaj dane z tego telefonu").assertIsDisplayed()
         // domyślny (główny, wyższy) przycisk to „przywróć”
@@ -268,7 +272,7 @@ class AccountScreensTest {
 
     @Test fun restoreChoiceSheetWordingWithoutBackup() {
         val choices = mutableListOf<Boolean>()
-        show { RestoreChoiceSheet(AfterLogin.NeedsChoice(fromOtherAccount = true, accountHasBackup = false), false, null) { choices += it } }
+        show { RestoreChoiceSheet(AfterLogin.NeedsChoice(fromOtherAccount = true, accountHasBackup = false), false, null, {}) { choices += it } }
         compose.onNodeWithText("Zacznij z pustym kontem").assertIsDisplayed()
         compose.onNodeWithText("Przenieś dane z tego telefonu na konto").assertIsDisplayed()
         compose.onNodeWithText("Przywróć dane z konta").assertDoesNotExist()
@@ -279,7 +283,7 @@ class AccountScreensTest {
     }
 
     @Test fun restoreChoiceSheetShowsErrorAndStaysOpen() {
-        show { RestoreChoiceSheet(AfterLogin.NeedsChoice(fromOtherAccount = false), false, ApiError.UnreadableBackup) {} }
+        show { RestoreChoiceSheet(AfterLogin.NeedsChoice(fromOtherAccount = false), false, ApiError.UnreadableBackup, {}) {} }
         compose.onNodeWithText("Nie udało się odczytać kopii z konta. Dane na telefonie pozostały bez zmian.").assertIsDisplayed()
         compose.onNodeWithText("Przywróć dane z konta").assertIsDisplayed()
         screenshot("account-restore-choice-error")
