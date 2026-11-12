@@ -61,11 +61,15 @@ class FakeAccountApi : AccountApi {
     /** Odpowiedź na register, gdy nie null (np. RateLimited). */
     var registerError: ApiError? = null
 
+    /** Wołane przed obsługą każdego wywołania (z nazwą metody); np. `delay`, żeby zmienić kolejność odpowiedzi. */
+    var beforeCall: suspend (String) -> Unit = {}
+
     fun verifyCode(email: String): String? = verifyCodes[email]?.value
     fun resetCode(email: String): String? = resetCodes[email]?.value
     fun account(email: String): Account = accounts.getValue(email)
     fun sessionCount(email: String): Int = accounts[email]?.let { a -> sessions.values.count { it == a.userId } } ?: 0
     fun revokeAllSessions() = sessions.clear()
+    fun authKeyMatches(email: String, authKey: ByteArray) = matches(authKey, account(email).authHash)
 
     private fun hash(b: ByteArray): ByteArray = MessageDigest.getInstance("SHA-256").digest(b)
     private fun matches(secret: ByteArray, hash: ByteArray) = MessageDigest.isEqual(hash(secret), hash)
@@ -75,13 +79,14 @@ class FakeAccountApi : AccountApi {
 
     private fun validCredentials(c: Credentials) = c.salt.size == 16 && c.authKey.size == 32 && c.slot1.size == 60
 
-    private inline fun <T> serve(name: String, block: () -> ApiResult<T>): ApiResult<T> {
+    private suspend inline fun <T> serve(name: String, block: () -> ApiResult<T>): ApiResult<T> {
         calls += name
+        beforeCall(name)
         if (offline) return ApiResult.Err(ApiError.Network)
         return block()
     }
 
-    private inline fun <T> authed(name: String, token: String, block: (Account) -> ApiResult<T>): ApiResult<T> =
+    private suspend inline fun <T> authed(name: String, token: String, block: (Account) -> ApiResult<T>): ApiResult<T> =
         serve(name) {
             val userId = sessions[token] ?: return@serve ApiResult.Err(ApiError.Unauthorized)
             block(byId(userId))

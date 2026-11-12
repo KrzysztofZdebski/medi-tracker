@@ -3,6 +3,9 @@ package pl.agh.meditracker.data.account
 import android.app.Application
 import android.content.Context
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -139,8 +142,33 @@ class AccountRepositoryTest {
         assertEquals(1L, otherStore.epoch)
         assertEquals(api.account(EMAIL).epoch, repo.session()!!.epoch)
         assertEquals(7L, otherStore.backupVersion)
-        assertEquals(userId, otherStore.dataOwnerUserId)
         assertEquals(EMAIL, otherStore.email)
+    }
+
+    @Test
+    fun loginDoesNotClaimDataOwner() = runTest {
+        val repo = repo()
+        repo.registered()
+        val anna = store.userId!!
+        assertFalse("świeże konto nie ma kopii, nie ma czego rozstrzygać", repo.decisionPending)
+        repo(otherStore).registered("ola@x.pl")
+        val ola = api.account("ola@x.pl").userId
+
+        // inne konto na tym samym telefonie: dane wciąż należą do Anny, decyzja przywróć/zachowaj czeka
+        assertEquals(ok(LoginNext.Ready(null)), repo.login("ola@x.pl", pw()))
+        assertEquals(anna, store.dataOwnerUserId)
+        assertTrue(repo.decisionPending)
+        assertTrue("przeżywa restart", repo().decisionPending)
+
+        repo.confirmDataOwner()
+        assertEquals(ola, store.dataOwnerUserId)
+        assertFalse(repo.decisionPending)
+
+        // telefon bez właściciela danych też musi zdecydować
+        val fresh = repo(AccountStore(context.getSharedPreferences("fresh", Context.MODE_PRIVATE), box))
+        assertFalse(fresh.decisionPending)
+        fresh.login(EMAIL, pw())
+        assertTrue(fresh.decisionPending)
     }
 
     @Test
@@ -211,18 +239,46 @@ class AccountRepositoryTest {
     }
 
     @Test
-    fun registerOfflineKeepsPendingOtherErrorsClearIt() = runTest {
+    fun registerNetworkErrorClearsPendingAndStaysPut() = runTest {
         val repo = repo()
         api.offline = true
         assertEquals(err(ApiError.Network), repo.register(EMAIL, pw()))
-        assertNotNull(store.pending)
-        assertEquals(AccountState.AwaitingVerification(EMAIL), repo.state.value)
+        assertNull(store.pending)
+        assertEquals(AccountState.LoggedOut, repo.state.value)
 
         api.offline = false
         api.registerError = ApiError.RateLimited
         assertEquals(err(ApiError.RateLimited), repo.register(EMAIL, pw()))
         assertNull(store.pending)
         assertEquals(AccountState.LoggedOut, repo.state.value)
+
+        // ponowna próba z tego samego formularza
+        api.registerError = null
+        assertEquals(ok(), repo.register(EMAIL, pw()))
+        assertEquals(AccountState.AwaitingVerification(EMAIL), repo.state.value)
+        assertEquals(ok(), repo.verify(api.verifyCode(EMAIL)!!))
+        assertTrue(repo.state.value is AccountState.ShowRecoveryCode)
+    }
+
+    @Test
+    fun concurrentRegisterCallsLeaveConsistentPending() = runTest {
+        val repo = repo()
+        // pierwsze żądanie dochodzi do serwera później niż drugie
+        var first = true
+        api.beforeCall = { name ->
+            if (name == "register" && first) {
+                first = false
+                delay(1000)
+            }
+        }
+        val a = async { repo.register(EMAIL, pw()) }
+        val b = async { repo.register(EMAIL, pw()) }
+        assertEquals(listOf(ok(), ok()), awaitAll(a, b))
+
+        val pending = store.pending!!
+        assertTrue("lokalny klucz auth == ostatnio zapisany na serwerze", api.authKeyMatches(EMAIL, pending.authKey!!))
+        assertEquals(ok(), repo.verify(api.verifyCode(EMAIL)!!))
+        assertEquals(AccountState.ShowRecoveryCode(EMAIL, pending.recoveryCode), repo.state.value)
     }
 
     @Test
@@ -371,7 +427,7 @@ class AccountRepositoryTest {
         val userId = store.userId!!
         val dek = repo.session()!!.dek
 
-        repo.onUnauthorized()
+        repo.onUnauthorized(store.token!!)
         assertEquals(AccountState.SessionExpired(EMAIL), repo.state.value)
         assertNull(repo.session())
         assertNull(store.token)
@@ -382,6 +438,24 @@ class AccountRepositoryTest {
         assertEquals(ok(LoginNext.Ready(null)), repo.login(EMAIL, pw()))
         assertEquals(AccountState.LoggedIn(EMAIL, userId), repo.state.value)
         assertArrayEquals(dek, repo.session()!!.dek)
+        assertFalse("to samo konto: zwykła synchronizacja", repo.decisionPending)
+    }
+
+    @Test
+    fun staleUnauthorizedDoesNotEndNewerSession() = runTest {
+        val repo = repo()
+        repo.registered()
+        val old = store.token!!
+        repo.login(EMAIL, pw())
+        val current = store.token!!
+        assertNotEquals(old, current)
+
+        repo.onUnauthorized(old)
+        assertTrue(repo.state.value is AccountState.LoggedIn)
+        assertEquals(current, store.token)
+
+        repo.onUnauthorized(current)
+        assertEquals(AccountState.SessionExpired(EMAIL), repo.state.value)
     }
 
     @Test

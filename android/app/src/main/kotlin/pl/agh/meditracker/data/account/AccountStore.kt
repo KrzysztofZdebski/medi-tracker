@@ -84,8 +84,8 @@ class AccountStore(private val prefs: SharedPreferences, private val box: Secret
 
     /**
      * Zapisuje nową sesję razem z [pending] jednym commitem (po weryfikacji rejestracji i po logowaniu), żeby
-     * zabicie procesu w połowie nie zostawiło sesji bez etapu rejestracji albo odwrotnie. Ustawia też
-     * [dataOwnerUserId]: od teraz dane na telefonie należą do tego konta.
+     * zabicie procesu w połowie nie zostawiło sesji bez etapu rejestracji albo odwrotnie. [claimData] ustawia
+     * [dataOwnerUserId] na to konto (po rejestracji; po logowaniu dopiero po decyzji przywróć / zachowaj, R17).
      */
     fun startSession(
         email: String,
@@ -95,6 +95,7 @@ class AccountStore(private val prefs: SharedPreferences, private val box: Secret
         epoch: Long,
         backupVersion: Long?,
         pending: PendingRegistration?,
+        claimData: Boolean,
     ) = write {
         putString(EMAIL, email)
         putString(USER_ID, userId)
@@ -102,7 +103,7 @@ class AccountStore(private val prefs: SharedPreferences, private val box: Secret
         putSealed(DEK, dek)
         putLong(EPOCH, epoch)
         putOrRemove(BACKUP_VERSION, backupVersion)
-        putString(DATA_OWNER, userId)
+        if (claimData) putString(DATA_OWNER, userId)
         putPending(pending)
     }
 

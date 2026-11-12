@@ -4,6 +4,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import pl.agh.meditracker.data.account.api.AccountApi
 import pl.agh.meditracker.data.account.api.ApiError
@@ -55,6 +57,11 @@ data class KdfBounds(
  * Wszystkie przepływy konta (spec §6.1–6.8 bez wylogowania). Argon2 liczy się na [cpu]. Hasła (CharArray) są
  * zerowane po użyciu, tak jak wyprowadzone klucze. [kdf] to parametry nowych poświadczeń (rejestracja, zmiana
  * i reset hasła); testy podają mniejsze razem z luźniejszymi [kdfBounds].
+ *
+ * Każdy przepływ, który czyta lub zmienia stan konta (store, reset w pamięci, [state]), biegnie pod jednym
+ * [mutex]: np. dwa szybkie „Utwórz konto” albo logowanie w trakcie rejestracji nie mogą przeplatać zapisów, bo
+ * lokalny pending i auth_hash na serwerze by się rozjechały. Bez blokady są tylko odczyty ([state], [session],
+ * [decisionPending]) i [markLoggedOut].
  */
 class AccountRepository(
     private val api: AccountApi,
@@ -65,6 +72,8 @@ class AccountRepository(
 ) {
     private val _state = MutableStateFlow(fromStore())
     val state: StateFlow<AccountState> = _state
+
+    private val mutex = Mutex()
 
     // reset hasła trzymany tylko w pamięci: token resetu, slot 2, a po sprawdzeniu kodu DEK i recovery_auth
     private class ResetFlow(val email: String, val token: String, val slot2: ByteArray) {
@@ -98,7 +107,7 @@ class AccountRepository(
         }
     }
 
-    suspend fun register(email: String, password: CharArray): ApiResult<Unit> = password.wipeAfter {
+    suspend fun register(email: String, password: CharArray): ApiResult<Unit> = password.locked {
         val normalized = normalize(email)
         if (!EMAIL_SHAPE.matches(normalized) || password.size < MIN_PASSWORD) {
             return ApiResult.Err(ApiError.InvalidInput)
@@ -115,14 +124,15 @@ class AccountRepository(
                 slot2 = wrap(recovery.kek, dek),
                 recoveryAuth = recovery.auth,
             )
-            // zapis przed wysłaniem: jeśli proces zginie zaraz po, aplikacja wraca do U03
+            // zapis przed wysłaniem: jeśli proces zginie, gdy żądanie już doszło, aplikacja wraca do U03
             store.pending = PendingRegistration(normalized, PendingRegistration.Stage.Verify, dek, code, keys.authKey)
             val result = api.register(request)
-            if (result is ApiResult.Err && result.error != ApiError.Network) {
+            if (result is ApiResult.Err) {
+                // także brak sieci (R16): żądanie mogło nie dojść, a wtedy kod nigdy nie przyjdzie; U01 pokazuje
+                // U12 i użytkownik ponawia (ponowna rejestracja nadpisuje oczekujące konto na serwerze)
                 store.pending = null
                 _state.value = fromStore()
             } else {
-                // przy braku sieci żądanie mogło dojść; kod może przyjść albo da się go wysłać ponownie
                 _state.value = AccountState.AwaitingVerification(normalized)
             }
             result
@@ -133,7 +143,7 @@ class AccountRepository(
         }
     }
 
-    suspend fun verify(code: String): ApiResult<Unit> {
+    suspend fun verify(code: String): ApiResult<Unit> = mutex.withLock {
         val p = store.pending?.takeIf { it.stage == PendingRegistration.Stage.Verify && it.authKey != null }
             ?: return ApiResult.Err(ApiError.InvalidInput)
         try {
@@ -141,47 +151,56 @@ class AccountRepository(
                 is ApiResult.Err -> return result
                 is ApiResult.Ok -> result.value
             }
-            // DEK i kod zostają (zaszyfrowane) do potwierdzenia „Zapisałem kod”; klucz auth już niepotrzebny
+            // DEK i kod zostają (zaszyfrowane) do potwierdzenia „Zapisałem kod”; klucz auth już niepotrzebny.
+            // Świeże konto nie ma kopii, więc dane z telefonu od razu należą do niego.
             val next = p.copy(stage = PendingRegistration.Stage.ShowRecoveryCode, authKey = null)
-            store.startSession(p.email, r.userId, r.token, p.dek, r.epoch, backupVersion = null, pending = next)
+            store.startSession(
+                p.email, r.userId, r.token, p.dek, r.epoch,
+                backupVersion = null, pending = next, claimData = true,
+            )
             store.lastBackupAt = null
             _state.value = AccountState.ShowRecoveryCode(p.email, p.recoveryCode)
-            return ApiResult.Ok(Unit)
+            ApiResult.Ok(Unit)
         } finally {
             p.dek.fill(0)
             p.authKey?.fill(0)
         }
     }
 
-    suspend fun resendCode(): ApiResult<Unit> {
+    suspend fun resendCode(): ApiResult<Unit> = mutex.withLock {
         val p = store.pending?.takeIf { it.stage == PendingRegistration.Stage.Verify }
             ?: return ApiResult.Err(ApiError.InvalidInput)
         p.dek.fill(0)
         p.authKey?.fill(0)
-        return api.resendVerify(p.email)
+        api.resendVerify(p.email)
     }
 
     /** „Zmień adres e-mail” w U03: porzuca niepotwierdzoną rejestrację. */
-    fun cancelRegistration() {
-        val p = store.pending?.takeIf { it.stage == PendingRegistration.Stage.Verify } ?: return
-        p.dek.fill(0)
-        p.authKey?.fill(0)
-        store.pending = null
-        _state.value = fromStore()
+    suspend fun cancelRegistration() {
+        mutex.withLock {
+            val p = store.pending?.takeIf { it.stage == PendingRegistration.Stage.Verify } ?: return
+            p.dek.fill(0)
+            p.authKey?.fill(0)
+            store.pending = null
+            _state.value = fromStore()
+        }
     }
 
-    fun acknowledgeRecoveryCode() {
-        val p = store.pending?.takeIf { it.stage == PendingRegistration.Stage.ShowRecoveryCode } ?: return
-        p.dek.fill(0)
-        // R6: pierwsza kopia (spec §6.1.7) czeka na BackupSync; najpierw flagi, potem pending, więc zabicie
-        // procesu w środku najwyżej pokaże kod jeszcze raz
-        store.backupVersion = null
-        store.dirty = true
-        store.pending = null
-        _state.value = fromStore()
+    suspend fun acknowledgeRecoveryCode() {
+        mutex.withLock {
+            val p = store.pending?.takeIf { it.stage == PendingRegistration.Stage.ShowRecoveryCode } ?: return
+            p.dek.fill(0)
+            // R6: pierwsza kopia (spec §6.1.7) czeka na BackupSync; najpierw flagi, potem pending, więc zabicie
+            // procesu w środku najwyżej pokaże kod jeszcze raz
+            store.backupVersion = null
+            store.dirty = true
+            store.pending = null
+            _state.value = fromStore()
+        }
     }
 
-    suspend fun login(email: String, password: CharArray): ApiResult<LoginNext.Ready> = password.wipeAfter {
+    /** Nie przejmuje danych na telefonie: do decyzji „przywróć / zachowaj” [decisionPending] jest true (R17). */
+    suspend fun login(email: String, password: CharArray): ApiResult<LoginNext.Ready> = password.locked {
         val normalized = normalize(email)
         val keys = when (val k = keysFromServer(normalized, password)) {
             is ApiResult.Err -> return k
@@ -199,7 +218,10 @@ class AccountRepository(
                 api.logout(r.token)
                 return ApiResult.Err(ApiError.InvalidCredentials)
             }
-            store.startSession(normalized, r.userId, r.token, dek, r.epoch, r.backupVersion, pending = null)
+            store.startSession(
+                normalized, r.userId, r.token, dek, r.epoch,
+                backupVersion = r.backupVersion, pending = null, claimData = false,
+            )
             dek.fill(0)
             _state.value = AccountState.LoggedIn(normalized, r.userId)
             ApiResult.Ok(LoginNext.Ready(r.backupVersion))
@@ -208,8 +230,26 @@ class AccountRepository(
         }
     }
 
+    /**
+     * Trwały znacznik R17: zalogowani, a dane na telefonie nie należą (jeszcze) do tego konta (także gdy nie
+     * należą do żadnego). BackupSync nie wysyła wtedy kopii i po starcie ponawia pytanie przywróć / zachowaj.
+     */
+    val decisionPending: Boolean
+        get() {
+            val loggedIn = _state.value as? AccountState.LoggedIn ?: return false
+            return store.dataOwnerUserId != loggedIn.userId
+        }
+
+    /** Decyzja po logowaniu podjęta (przywrócenie, wysłanie albo wybór użytkownika): dane należą do tego konta. */
+    suspend fun confirmDataOwner() {
+        mutex.withLock {
+            val loggedIn = _state.value as? AccountState.LoggedIn ?: return
+            store.dataOwnerUserId = loggedIn.userId
+        }
+    }
+
     suspend fun changePassword(old: CharArray, new: CharArray): ApiResult<Unit> = old.wipeAfter {
-        new.wipeAfter {
+        new.locked {
             val s = session() ?: return ApiResult.Err(ApiError.Unauthorized)
             try {
                 if (new.size < MIN_PASSWORD) return ApiResult.Err(ApiError.InvalidInput)
@@ -222,7 +262,7 @@ class AccountRepository(
                 val newKeys = derive(new, salt, kdf)
                 try {
                     val credentials = Credentials(salt, kdf, newKeys.authKey, wrap(newKeys.kek, s.dek))
-                    authed(api.changePassword(s.token, oldKeys.authKey, credentials))
+                    authed(s.token, api.changePassword(s.token, oldKeys.authKey, credentials))
                 } finally {
                     oldKeys.wipe()
                     newKeys.wipe()
@@ -233,11 +273,13 @@ class AccountRepository(
         }
     }
 
-    suspend fun requestReset(email: String): ApiResult<Unit> = api.requestReset(normalize(email))
+    suspend fun requestReset(email: String): ApiResult<Unit> = mutex.withLock {
+        api.requestReset(normalize(email))
+    }
 
-    suspend fun verifyReset(email: String, code: String): ApiResult<Unit> {
+    suspend fun verifyReset(email: String, code: String): ApiResult<Unit> = mutex.withLock {
         val normalized = normalize(email)
-        return when (val result = api.verifyReset(normalized, code.trim())) {
+        when (val result = api.verifyReset(normalized, code.trim())) {
             is ApiResult.Err -> result
             is ApiResult.Ok -> {
                 reset?.wipe()
@@ -247,12 +289,15 @@ class AccountRepository(
         }
     }
 
-    /** Otwiera slot 2 lokalnie; zły kod nie idzie do serwera i można próbować dalej. */
-    fun checkRecoveryCode(input: String): Boolean {
+    /**
+     * Otwiera slot 2 lokalnie; zły kod nie idzie do serwera i można próbować dalej. Pod blokadą, bo podmienia
+     * (i zeruje) DEK resetu, którego może właśnie używać [completeReset].
+     */
+    suspend fun checkRecoveryCode(input: String): Boolean = mutex.withLock {
         val flow = reset ?: return false
         val code = RecoveryCode.parse(input) ?: return false
         val keys = recoveryKeys(code)
-        return try {
+        try {
             val dek = unwrap(keys.kek, flow.slot2)
             flow.wipe()
             flow.dek = dek
@@ -267,7 +312,7 @@ class AccountRepository(
     }
 
     /** Nowe hasło, ten sam DEK. Serwer unieważnia wszystkie sesje, więc koniec bez zalogowania (U08 → login). */
-    suspend fun completeReset(newPassword: CharArray): ApiResult<Unit> = newPassword.wipeAfter {
+    suspend fun completeReset(newPassword: CharArray): ApiResult<Unit> = newPassword.locked {
         val flow = reset
         val dek = flow?.dek
         val recoveryAuth = flow?.recoveryAuth
@@ -288,7 +333,7 @@ class AccountRepository(
      * Reset bez kodu odzyskiwania: nowy DEK i nowy kod, kopia na serwerze znika. Zwraca nowy kod do pokazania;
      * stan nie przechodzi w LoggedIn (R7), po logowaniu BackupSync wyśle dane z tego telefonu.
      */
-    suspend fun wipeReset(newPassword: CharArray): ApiResult<RecoveryCode> = newPassword.wipeAfter {
+    suspend fun wipeReset(newPassword: CharArray): ApiResult<RecoveryCode> = newPassword.locked {
         val flow = reset
         if (flow == null || newPassword.size < MIN_PASSWORD) return ApiResult.Err(ApiError.InvalidInput)
         val dek = randomBytes(DEK_LEN)
@@ -322,7 +367,7 @@ class AccountRepository(
     }
 
     /** Usuwa konto na serwerze (spec §6.7); dane na telefonie zostają. */
-    suspend fun deleteAccount(password: CharArray): ApiResult<Unit> = password.wipeAfter {
+    suspend fun deleteAccount(password: CharArray): ApiResult<Unit> = password.locked {
         val s = session() ?: return ApiResult.Err(ApiError.Unauthorized)
         try {
             val email = store.email ?: return ApiResult.Err(ApiError.Unauthorized)
@@ -331,7 +376,7 @@ class AccountRepository(
                 is ApiResult.Ok -> k.value
             }
             try {
-                authed(api.deleteAccount(s.token, keys.authKey)).also {
+                authed(s.token, api.deleteAccount(s.token, keys.authKey)).also {
                     if (it is ApiResult.Ok) {
                         store.clear()
                         _state.value = AccountState.LoggedOut
@@ -345,9 +390,16 @@ class AccountRepository(
         }
     }
 
-    /** 401 `unauthorized` z dowolnej trasy z tokenem: U13, bez kasowania czegokolwiek poza sesją (spec §6.8). */
-    fun onUnauthorized() {
-        if (_state.value !is AccountState.LoggedIn) return
+    /**
+     * 401 `unauthorized` z trasy wywołanej z [token]: U13, bez kasowania czegokolwiek poza sesją (spec §6.8).
+     * Spóźniona odpowiedź dla starego tokenu nie kończy nowszej sesji (R18).
+     */
+    suspend fun onUnauthorized(token: String) {
+        mutex.withLock { expireSession(token) }
+    }
+
+    private fun expireSession(token: String) {
+        if (_state.value !is AccountState.LoggedIn || token != store.token) return
         store.clearSession()
         _state.value = fromStore()
     }
@@ -367,8 +419,9 @@ class AccountRepository(
         return Session(token, userId, dek, epoch)
     }
 
-    private fun <T> authed(result: ApiResult<T>): ApiResult<T> {
-        if (result is ApiResult.Err && result.error == ApiError.Unauthorized) onUnauthorized()
+    // wołane już pod blokadą
+    private fun <T> authed(token: String, result: ApiResult<T>): ApiResult<T> {
+        if (result is ApiResult.Err && result.error == ApiError.Unauthorized) expireSession(token)
         return result
     }
 
@@ -384,6 +437,9 @@ class AccountRepository(
 
     private suspend fun derive(password: CharArray, salt: ByteArray, params: KdfParams): PasswordKeys =
         withContext(cpu) { passwordKeys(password, salt, params) }
+
+    // przepływ z hasłem: pod blokadą, hasło zerowane także wtedy, gdy czekało na blokadę
+    private suspend inline fun <T> CharArray.locked(block: () -> T): T = wipeAfter { mutex.withLock(action = block) }
 
     private companion object {
         const val MIN_PASSWORD = 10
