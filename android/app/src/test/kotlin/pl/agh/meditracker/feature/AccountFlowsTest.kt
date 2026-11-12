@@ -25,6 +25,7 @@ import pl.agh.meditracker.data.account.AccountStore
 import pl.agh.meditracker.data.account.AfterLogin
 import pl.agh.meditracker.data.account.FakeAccountApi
 import pl.agh.meditracker.data.account.KdfBounds
+import pl.agh.meditracker.data.account.SyncStatus
 import pl.agh.meditracker.data.account.PlainSecretBox
 import pl.agh.meditracker.data.account.api.ApiResult
 import pl.agh.meditracker.data.account.crypto.EncryptedBlob
@@ -207,6 +208,50 @@ class AccountFlowsTest {
         compose.onNodeWithText("Zachowaj dane z tego telefonu").performClick()
         compose.waitUntil(15_000) { compose.onAllNodesWithText("Co zrobić z danymi?").fetchSemanticsNodes().isEmpty() }
         compose.onNodeWithText("Konto jest używane na innym urządzeniu").assertDoesNotExist()
+    }
+
+    @Test fun conflictSheetDoesNotReopenByItselfAfterConflictEnds() {
+        fun med() = Medication(
+            name = "Metformina", strength = "500 mg", form = "tabletki", unit = DoseUnit.Tablet,
+            schedule = Schedule(1, DayOfWeek.entries.toSet(), listOf(LocalTime.of(8, 0)), LocalDate.now()),
+            stock = 30, refillThreshold = 5,
+        )
+        runBlocking {
+            account.registered(ANNA)
+            app.container.medications.add(med())
+            app.api.account(ANNA).epoch += 1
+            app.container.backup.upload()
+        }
+        // jak w aplikacji: BackupSync obserwuje zmiany (w testach nikt go domyślnie nie startuje)
+        app.container.backup.start()
+        compose.setContent { MediTrackerTheme { AppNavHost(true, {}) } }
+        waitForText("Konto jest używane na innym urządzeniu")
+        compose.onNodeWithText("Konto jest używane na innym urządzeniu").performClick()
+        compose.onNodeWithText("Co zrobić z danymi?").assertIsDisplayed()
+        // konflikt kończy się wylogowaniem (arkusz był otwarty)
+        runBlocking { app.container.backup.logout(true) }
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Co zrobić z danymi?").fetchSemanticsNodes().isEmpty() }
+        // to samo konto loguje się ponownie i znów trafia na 409
+        runBlocking {
+            assertTrue(account.login(ANNA, pw()) is ApiResult.Ok)
+            app.container.backup.afterLogin()
+            // epoch przed zmianą: nawet automatyczne wysłanie dostanie 409
+            app.api.account(ANNA).epoch += 1
+            app.container.medications.add(med())
+            app.container.medications.awaitWrites()
+            // zmiana oznacza dane jako brudne asynchronicznie, więc ponawiamy aż do 409
+            repeat(100) {
+                if (app.container.backup.status.value is SyncStatus.Conflict) return@repeat
+                app.container.backup.upload()
+                Thread.sleep(50)
+            }
+        }
+        waitForText("Konto jest używane na innym urządzeniu")
+        compose.waitForIdle()
+        compose.onNodeWithText("Co zrobić z danymi?").assertDoesNotExist()
+        compose.onNodeWithText("Konto jest używane na innym urządzeniu").performClick()
+        compose.onNodeWithText("Co zrobić z danymi?").assertIsDisplayed()
+        compose.onNodeWithText("Nie udało się").assertDoesNotExist()
     }
 
     private fun waitForText(text: String) =

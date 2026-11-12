@@ -39,6 +39,19 @@ class ConflictChoiceViewModel(private val backup: BackupSync) : ViewModel() {
     var error by mutableStateOf<ApiError?>(null)
         private set
 
+    // Konflikt kończy się też poza arkuszem (wylogowanie, utrata sesji, rozstrzygnięcie gdzie indziej). Stan arkusza nie
+    // może go przeżyć, bo następne 409 w tym samym procesie otworzyłoby arkusz bez dotknięcia, ze starym błędem.
+    init {
+        viewModelScope.launch {
+            status.collect { if (it !is SyncStatus.Conflict) conflictEnded() }
+        }
+    }
+
+    private fun conflictEnded() {
+        open = false
+        error = null
+    }
+
     fun open() {
         error = null
         open = true
