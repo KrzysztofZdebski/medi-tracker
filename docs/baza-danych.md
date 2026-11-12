@@ -11,7 +11,7 @@ Projekt bazy danych aplikacji (Kotlin, Android, SQLite).
 
 ## Najważniejsze decyzje
 
-1. **Przetwarzanie lokalne, opcjonalne konto.** Dane użytkownika są przetwarzane na telefonie. Konto jest opcjonalne. Dla użytkownika, który je założył, kopia zapasowa jest szyfrowana end-to-end na telefonie, więc na serwerze leży tylko szyfrogram (patrz §2). Poza urządzeniem są więc szyfrowany Android Auto Backup i szyfrowana kopia konta. 
+1. **Przetwarzanie lokalne, opcjonalne konto.** Dane użytkownika są przetwarzane na telefonie. Konto jest opcjonalne. Dla użytkownika, który je założył, kopia zapasowa jest szyfrowana end-to-end na telefonie, więc na serwerze leży tylko szyfrogram (patrz §2). Jedyną kopią poza urządzeniem jest szyfrowana kopia konta; Android Auto Backup jest wyłączony (`allowBackup="false"`). 
 2. **SQLite przez Room na telefonie, backend tylko do kont i kopii.** Lokalna baza to nadal Room. Serwer `server/` (Rust, axum, SQLite) działa na domowym serwerze autorów za Tailscale Funnel. Przechowuje e-mail, hashe i szyfrogram kopii, a także buduje katalog leków (szczegóły: [server/README.md](../server/README.md)).
 3. **Dwa pliki bazy:**
    - `catalog.db`: katalog z RPL, tylko do odczytu, podmieniany w całości;
@@ -32,7 +32,7 @@ Projekt bazy danych aplikacji (Kotlin, Android, SQLite).
 - **Telefon:**
   - `catalog.db`: początkowo kopiowany z assets APK, później podmieniany przez Worker;
   - `user.db`: Room, tryb WAL;
-  - konto (opcjonalne): plik `account.xml` z tokenem sesji i kluczem danych (DEK), zaszyfrowanymi kluczem z Android Keystore; wykluczony z Auto Backup;
+  - konto (opcjonalne): plik `account.xml` z tokenem sesji i kluczem danych (DEK), zaszyfrowanymi kluczem z Android Keystore;
   - warstwa repozytoriów, z której korzystają UI, powiadomienia i skaner.
   
   Do sieci aplikacja wychodzi w trzech sytuacjach: do serwera mediTracker (konto, kopia zapasowa, aktualizacja katalogu) i do API JSON RPL dla kodów spoza katalogu. Skanowanie i przypomnienia działają bez sieci i bez konta.
@@ -78,13 +78,9 @@ Dzięki temu ryzyko RODO jest niskie. Wyciek bazy serwera nie ujawnia danych o l
 Katalog leków jest budowany z publicznych danych RPL, bez danych osobowych, więc jego przeniesienie na serwer nie zmienia tej oceny.
 
 
-### Kopia zapasowa: Android Auto Backup
+### Kopia zapasowa
 
-Kopia trafia na Dysk Google użytkownika. Od Androida 9, przy ustawionej blokadzie ekranu, jest szyfrowana po stronie klienta, więc ani my, ani Google nie mamy dostępu do treści. Limit to 25 MB na aplikację, dlatego:
-- `catalog.db` wykluczamy: zająłby limit, a aplikacja i tak go odtworzy (`createFromAsset` albo pobranie);
-- kopia obejmuje tylko `user.db` z plikiem WAL;
-- wyłączamy kopię na urządzeniach, które nie zapewniają szyfrowania;
-- plik konta `account.xml` (token i DEK) jest wykluczony z kopii w obu regułach (`data_extraction_rules.xml`, `backup_rules.xml`). Jest zaszyfrowany kluczem Keystore tego telefonu, więc po przywróceniu na innym urządzeniu byłby bezużyteczny.
+Android Auto Backup (kopia na Dysku Google) jest wyłączony (`android:allowBackup="false"`). Kopią zapasową jest wyłącznie szyfrowana kopia konta (opcjonalnego). Powód: Auto Backup przywracał po reinstalacji bazę i ustawienia niezależnie od konta, więc dane usunięte przy wylogowaniu mogły wrócić z Dysku Google. Użytkownik bez konta po reinstalacji zaczyna od zera.
 
 
 

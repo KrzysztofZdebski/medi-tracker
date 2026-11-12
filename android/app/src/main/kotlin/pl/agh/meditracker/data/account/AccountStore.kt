@@ -23,8 +23,8 @@ data class PendingRegistration(
 }
 
 /**
- * Stan konta na telefonie (spec §5.3) w pliku prefs `account`, wyłączonym z kopii systemu
- * (data_extraction_rules.xml, backup_rules.xml).
+ * Stan konta na telefonie (spec §5.3) w pliku prefs `account`; Android Auto Backup jest wyłączony
+ * (`android:allowBackup="false"`), więc plik nie trafia do kopii systemu.
  * Token, DEK i sekrety oczekującej rejestracji są szyfrowane przez [SecretBox]; jeśli nie da się ich odszyfrować
  * (klucz Keystore zniknął), są traktowane jak nieobecne. Zapis przez commit: plik jest mały, a utrata tokenu albo
  * oczekującej rejestracji przy zabiciu procesu byłaby gorsza niż krótki zapis na dysk.
