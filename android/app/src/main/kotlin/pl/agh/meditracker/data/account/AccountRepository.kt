@@ -410,6 +410,15 @@ class AccountRepository(
     }
 
     /**
+     * Pierwszy krok wylogowania, przed skasowaniem danych telefonu: dane przestają należeć do tego konta. Jeśli
+     * proces zginie po kasowaniu, a przed [logoutLocally], [decisionPending] blokuje wysłanie pustego telefonu na
+     * jedyną kopię, a następna decyzja po cichu przywróci kopię.
+     */
+    suspend fun releaseDataOwner() {
+        mutex.withLock { store.dataOwnerUserId = null }
+    }
+
+    /**
      * Lokalna połowa wylogowania (R19), wołana przez BackupSync po skasowaniu danych telefonu: cały plik konta
      * razem z [AccountStore.dataOwnerUserId] (telefon nie ma już danych, więc nie mają właściciela).
      */

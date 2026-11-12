@@ -4,12 +4,16 @@ import android.app.Application
 import android.content.Context
 import androidx.room.Room
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
@@ -36,6 +40,7 @@ import pl.agh.meditracker.data.account.crypto.blobAad
 import pl.agh.meditracker.data.account.crypto.decryptBlob
 import pl.agh.meditracker.data.account.crypto.encryptBlob
 import pl.agh.meditracker.data.repository.MedicationRepository
+import pl.agh.meditracker.data.repository.MedicationStore
 import pl.agh.meditracker.data.settings.AppTheme
 import pl.agh.meditracker.data.settings.SettingsStore
 import pl.agh.meditracker.data.user.RoomMedicationStore
@@ -117,9 +122,13 @@ class BackupSyncTest {
     private fun localMeds() = repo.medications.value.map { it.name }.toSet()
     private fun storedMeds() = RoomMedicationStore(db.dao()).load().medications.map { it.name }.toSet()
 
+    // DEK konta z którejkolwiek sesji; zapamiętany, bo sesja może potem wygasnąć albo zostać wylogowana
+    private val deks = mutableMapOf<String, ByteArray>()
+
     private fun serverSnapshot(email: String = EMAIL): Snapshot {
         val a = api.account(email)
-        val dek = (if (account.session()?.userId == a.userId) account else other).session()!!.dek
+        val dek = listOf(account, other).mapNotNull { it.session() }.firstOrNull { it.userId == a.userId }?.dek
+            ?.also { deks[a.userId] = it } ?: deks.getValue(a.userId)
         return SnapshotCodec.decode(decryptBlob(dek, a.blob!!, blobAad(a.userId)))
     }
 
@@ -356,9 +365,9 @@ class BackupSyncTest {
     }
 
     // inny telefon przejął konto i wysłał swoje dane; ten ma lokalną zmianę i dostaje konflikt
-    private suspend fun TestScope.conflictWithOtherPhone(): BackupSync {
+    private suspend fun TestScope.conflictWithOtherPhone(scope: CoroutineScope = backgroundScope): BackupSync {
         account.registered()
-        val sync = sync()
+        val sync = sync(scope)
         runCurrent()
         repo.add(med("Metformina"))
         advanceTimeBy(5_000); runCurrent()
@@ -730,5 +739,201 @@ class BackupSyncTest {
 
         assertEquals(LogoutResult.Done, sync.logout(force = false))
         assertEquals(AccountState.LoggedOut, account.state.value)
+    }
+
+    // --- poprawki po przeglądzie (runda 1) ---
+
+    @Test
+    fun restoreFailureThenLogoutDoesNotOverwrite() = test {
+        val sync = conflictWithOtherPhone()
+        val version = api.account(EMAIL).version
+
+        api.beforeCall = { if (it == "getBackup") api.offline = true }
+        assertEquals(ApiResult.Err(ApiError.Network), sync.resolve(restore = true))
+        api.beforeCall = {}
+        api.offline = false
+
+        assertEquals(LogoutResult.Unsynced, sync.logout(force = false))
+        assertEquals(SyncStatus.Conflict, sync.upload())
+        assertEquals("kopia wybrana do przywrócenia zostaje nietknięta", version, api.account(EMAIL).version)
+        assertEquals(setOf("Ibuprom"), serverMeds())
+        assertEquals(setOf("Metformina", "Apap"), localMeds())
+    }
+
+    @Test
+    fun crashDuringRestoreDoesNotUploadOnRestart() = test {
+        val dying = CoroutineScope(dispatcher + Job())
+        val sync = conflictWithOtherPhone(dying)
+        val version = api.account(EMAIL).version
+
+        // przejęcie przeszło, proces ginie w trakcie pobierania kopii
+        api.beforeCall = { if (it == "getBackup") awaitCancellation() }
+        dying.launch { sync.resolve(restore = true) }
+        runCurrent()
+        assertTrue("takeover" in api.calls)
+        dying.cancel()
+        api.beforeCall = {}
+
+        val restarted = sync(acc = accountRepo(AccountStore(prefs("account"), box)))
+        advanceTimeBy(30 * 60_000L); runCurrent()
+        assertEquals("stary epoch: PUT dostaje 409 zamiast nadpisać", version, api.account(EMAIL).version)
+        assertEquals(setOf("Ibuprom"), serverMeds())
+        assertEquals(SyncStatus.Conflict, restarted.status.value)
+    }
+
+    @Test
+    fun logoutWhileDecisionPendingDoesNotWipe() = test {
+        account.registered()
+        val sync = sync()
+        runCurrent()
+        repo.add(med("Metformina"))
+        advanceTimeBy(5_000); runCurrent()
+        other.registered(OLA)
+        otherPhoneUploads("Ibuprom")
+        account.onUnauthorized(accountStore.token!!)
+        account.login(OLA, pw())
+        assertTrue(account.decisionPending)
+        assertFalse(accountStore.dirty)
+
+        assertEquals("dane telefonu nie są w kopii tego konta", LogoutResult.Unsynced, sync.logout(force = false))
+        assertEquals(setOf("Metformina"), localMeds())
+        assertTrue(account.state.value is AccountState.LoggedIn)
+
+        assertEquals(LogoutResult.Done, sync.logout(force = true))
+        assertEquals(emptySet<String>(), localMeds())
+    }
+
+    @Test
+    fun crashAfterWipeBeforeLogoutLocallyDoesNotUpload() = test {
+        val real = RoomMedicationStore(db.dao())
+        val crashing = object : MedicationStore by real {
+            override fun wipe() {
+                real.wipe()
+                throw IllegalStateException("proces ginie zaraz po skasowaniu bazy")
+            }
+        }
+        val dying = CoroutineScope(dispatcher + Job())
+        val repo1 = MedicationRepository(clock, crashing, writeDispatcher = dispatcher)
+        account.registered()
+        val sync1 = BackupSync(repo1, settings, account, accountStore, api, dying, clock).also { it.start() }
+        runCurrent()
+        repo1.add(med("Metformina"))
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(setOf("Metformina"), serverMeds())
+
+        // bez sieci POST /auth/logout nie unieważnia sesji, więc po restarcie token wciąż działa
+        api.beforeCall = { if (it == "logout") api.offline = true }
+        assertTrue(runCatching { sync1.logout(force = false) }.isFailure)
+        dying.cancel()
+        api.beforeCall = {}
+        api.offline = false
+
+        // restart: pusta baza, sesja wciąż w pliku konta
+        val repo2 = MedicationRepository(clock, real, real.load(), writeDispatcher = dispatcher)
+        val acc2 = accountRepo(AccountStore(prefs("account"), box))
+        BackupSync(repo2, settings, acc2, accountStore, api, backgroundScope, clock).start()
+        runCurrent()
+        val before = puts()
+        advanceTimeBy(30 * 60_000L); runCurrent()
+        assertEquals(before, puts())
+
+        repo2.add(med("Apap"))
+        advanceTimeBy(5_000); runCurrent()
+        assertTrue("jedyna kopia nie została nadpisana prawie pustymi danymi", "Metformina" in serverMeds())
+    }
+
+    @Test
+    fun uploadNeverClearsDirtyForAChangeItDidNotInclude() = test {
+        account.registered()
+        val sync = sync()
+        runCurrent()
+        // ktoś (np. „Spróbuj ponownie”) wysyła kopię dokładnie w chwili sygnału o zmianie
+        backgroundScope.launch(Dispatchers.Unconfined, CoroutineStart.UNDISPATCHED) {
+            repo.changes.collect {
+                backgroundScope.launch(Dispatchers.Unconfined, CoroutineStart.UNDISPATCHED) { sync.upload() }
+            }
+        }
+
+        repo.add(med("Metformina"))
+        runCurrent()
+        assertTrue(
+            "czysta flaga wymaga, by kopia zawierała zmianę",
+            accountStore.dirty || serverMeds() == setOf("Metformina"),
+        )
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(setOf("Metformina"), serverMeds())
+        assertFalse(accountStore.dirty)
+    }
+
+    @Test
+    fun exceptionInUploadDoesNotStopAutoBackup() = test {
+        account.registered()
+        val sync = sync()
+        runCurrent()
+        var thrown = false
+        api.beforeCall = {
+            if (it == "putBackup" && !thrown) {
+                thrown = true
+                throw RuntimeException("nieoczekiwany błąd")
+            }
+        }
+
+        repo.add(med("Metformina"))
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(SyncStatus.Failed, sync.status.value)
+        assertTrue(accountStore.dirty)
+
+        repo.add(med("Apap"))
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(setOf("Metformina", "Apap"), serverMeds())
+        assertEquals(SyncStatus.Idle(clock.instant()), sync.status.value)
+    }
+
+    // telefon z danymi Anny, Ola loguje się na konto bez kopii
+    private suspend fun TestScope.otherAccountDataOnEmptyAccount(): BackupSync {
+        account.registered()
+        val sync = sync()
+        runCurrent()
+        repo.add(med("Metformina"))
+        advanceTimeBy(5_000); runCurrent()
+        other.registered(OLA)
+        account.onUnauthorized(accountStore.token!!)
+        account.login(OLA, pw())
+        return sync
+    }
+
+    @Test
+    fun otherAccountDataIsNotSilentlyUploadedToEmptyAccount() = test {
+        val sync = otherAccountDataOnEmptyAccount()
+        val before = puts()
+
+        assertEquals(AfterLogin.NeedsChoice(fromOtherAccount = true), sync.afterLogin())
+        assertEquals(AfterLogin.NeedsChoice(fromOtherAccount = true), sync.pendingChoice.value)
+        advanceTimeBy(30 * 60_000L); runCurrent()
+        assertEquals(before, puts())
+        assertNull(api.account(OLA).blob)
+
+        // „Przywróć dane z konta” = zacznij od pustego telefonu, bez GET
+        api.calls.clear()
+        assertEquals(ApiResult.Ok(Unit), sync.resolve(restore = true))
+        runCurrent()
+        assertFalse("getBackup" in api.calls)
+        assertEquals(emptySet<String>(), localMeds())
+        assertEquals(emptySet<String>(), storedMeds())
+        assertEquals(api.account(OLA).userId, accountStore.dataOwnerUserId)
+        assertFalse(account.decisionPending)
+        assertNull(sync.pendingChoice.value)
+        assertNull(api.account(OLA).blob)
+        assertFalse(accountStore.dirty)
+    }
+
+    @Test
+    fun otherAccountDataKeptOnRequestIsUploaded() = test {
+        val sync = otherAccountDataOnEmptyAccount()
+        assertEquals(AfterLogin.NeedsChoice(fromOtherAccount = true), sync.afterLogin())
+
+        assertEquals(ApiResult.Ok(Unit), sync.resolve(restore = false))
+        assertEquals(setOf("Metformina"), serverMeds(OLA))
+        assertFalse(account.decisionPending)
     }
 }

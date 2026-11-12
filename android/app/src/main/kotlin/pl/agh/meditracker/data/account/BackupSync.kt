@@ -1,6 +1,8 @@
 package pl.agh.meditracker.data.account
 
+import android.util.Log
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -50,7 +52,10 @@ sealed interface AfterLogin {
     /** Dane z telefonu są (albo zaraz będą) kopią konta; także gdy obie strony są puste. */
     data object Uploaded : AfterLogin
 
-    /** Obie strony mają dane: użytkownik wybiera [BackupSync.resolve]. */
+    /**
+     * Użytkownik wybiera [BackupSync.resolve]: obie strony mają dane albo dane innego konta trafiają na konto bez
+     * kopii (R21; wtedy „przywróć” oznacza pusty telefon).
+     */
     data class NeedsChoice(val fromOtherAccount: Boolean) : AfterLogin
 
     /** Nic nie zmieniono; decyzja wciąż czeka (przy błędzie sieci ponowimy ją w tle). */
@@ -68,6 +73,11 @@ enum class LogoutResult { Done, Unsynced }
  * - dopóki [AccountRepository.decisionPending], nic nie jest wysyłane (dane mogą należeć do innego konta, R17);
  * - `base_version` to zawsze wersja serwera z GET, przejęcia albo ostatniego zapisu (R12), więc PUT nadpisze tylko
  *   kopię, którą ten telefon zna; inaczej 409 i pytanie użytkownika;
+ * - po 409 nic nie jest wysyłane (także ręcznie i przy wylogowaniu) do [resolve]; przy wyborze „przywróć” nowy epoch
+ *   z przejęcia trafia do pliku konta dopiero razem z przywróconymi danymi, więc dane, które użytkownik porzuca,
+ *   nigdy nie nadpiszą kopii (także po błędzie i po śmierci procesu w trakcie);
+ * - wylogowanie najpierw trwale zwalnia właściciela danych, dopiero potem kasuje telefon;
+ * - dane innego konta nie trafiają po cichu na konto bez kopii (R21);
  * - nieudane przywrócenie (odszyfrowanie, format, baza) zostawia dane lokalne bez zmian;
  * - własne zmiany (przywrócenie, wylogowanie) nie oznaczają danych jako brudnych (R15): podmiana i kasowanie bazy nie
  *   wysyłają `changes`, a ustawienia, które sami zapisujemy, kolektor rozpoznaje po [knownSynced].
@@ -108,22 +118,30 @@ class BackupSync(
     private val _pendingChoice = MutableStateFlow<AfterLogin.NeedsChoice?>(null)
     val pendingChoice: StateFlow<AfterLogin.NeedsChoice?> = _pendingChoice
 
+    // pytanie dotyczy danych innego konta przy koncie bez kopii (R21): „przywróć” = zacznij od pustego telefonu
+    @Volatile private var choiceForEmptyAccount = false
+
+    // R20: wyjątek w pracy w tle nie może zabić procesu ani po cichu zatrzymać kopii
+    private val guard = CoroutineExceptionHandler { _, e -> onCrash(e) }
+
     fun start() {
         if (!started.compareAndSet(false, true)) return
         synchronized(lock) { knownSynced = currentSynced() }
-        scope.launch(Dispatchers.Unconfined, CoroutineStart.UNDISPATCHED) {
-            repository.changes.collect { onLocalChange() }
+        scope.launch(guard + Dispatchers.Unconfined, CoroutineStart.UNDISPATCHED) {
+            repository.changes.collect { guarded { onLocalChange() } }
         }
-        scope.launch(Dispatchers.Unconfined, CoroutineStart.UNDISPATCHED) {
+        scope.launch(guard + Dispatchers.Unconfined, CoroutineStart.UNDISPATCHED) {
             settings.state.map { SyncedSettings(it.theme, it.snoozeMinutes) }.distinctUntilChanged().collect { s ->
-                val ours = synchronized(lock) { (s == knownSynced).also { knownSynced = s } }
-                if (!ours) onLocalChange()
+                guarded {
+                    val ours = synchronized(lock) { (s == knownSynced).also { knownSynced = s } }
+                    if (!ours) onLocalChange()
+                }
             }
         }
-        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+        scope.launch(guard, CoroutineStart.UNDISPATCHED) {
             var previous: AccountState? = null
             account.state.collect { current ->
-                onAccountState(previous, current)
+                guarded { onAccountState(previous, current) }
                 previous = current
             }
         }
@@ -149,19 +167,33 @@ class BackupSync(
                 is ApiResult.Err -> return@withLock failure(s, r)
                 is ApiResult.Ok -> r.value
             }
-            accountStore.epoch = epoch
-            accountStore.backupVersion = version
             cancelTimers()
-            if (restore) {
+            if (restore && choiceForEmptyAccount) {
+                // R21: dane innego konta, konto bez kopii; „przywróć” = pusty telefon (nie ma czego pobierać)
+                accountStore.epoch = epoch
+                accountStore.backupVersion = version
+                val seq = synchronized(lock) { changeSeq }
+                wipeLocal()
+                accountStore.lastBackupAt = null
+                synchronized(lock) { if (changeSeq == seq) accountStore.dirty = false }
+                account.confirmDataOwner()
+                settled()
+                ApiResult.Ok(Unit)
+            } else if (restore) {
+                // Nowy epoch zapisujemy dopiero razem z przywróconymi danymi. Do tego czasu telefon ma stary epoch,
+                // więc każdy PUT jego (porzucanych) danych dostanie 409: po błędzie pobrania, po wylogowaniu bez
+                // wymuszenia i po śmierci procesu w trakcie.
                 val backup = when (val r = api.getBackup(s.token)) {
                     is ApiResult.Err -> return@withLock failure(s, r)
                     is ApiResult.Ok -> r.value
                 }
-                if (!restoreLocked(s, backup)) return@withLock ApiResult.Err(ApiError.UnreadableBackup)
+                if (!restoreLocked(s, backup, epoch)) return@withLock ApiResult.Err(ApiError.UnreadableBackup)
                 account.confirmDataOwner()
                 settled()
                 ApiResult.Ok(Unit)
             } else {
+                accountStore.epoch = epoch
+                accountStore.backupVersion = version
                 // wybór zapada już tu; jeśli wysyłanie się nie uda, flaga dirty i ponowienie dokończą sprawę
                 markDirty()
                 account.confirmDataOwner()
@@ -175,25 +207,28 @@ class BackupSync(
 
     /**
      * Wylogowanie (spec §6.6, R19). Bez [force] najpierw wysyła zaległe zmiany; gdy się nie da (sieć, konflikt,
-     * wygasła sesja, nierozstrzygnięta decyzja), zwraca [LogoutResult.Unsynced] i niczego nie kasuje.
+     * wygasła sesja), zwraca [LogoutResult.Unsynced] i niczego nie kasuje. Tak samo przy nierozstrzygniętej
+     * decyzji po logowaniu: dane telefonu nie są wtedy w kopii tego konta, nawet jeśli nie są brudne.
      */
     suspend fun logout(force: Boolean): LogoutResult = ops.withLock {
+        if (!force && account.decisionPending) return@withLock LogoutResult.Unsynced
         if (!force && accountStore.dirty) {
             uploadLocked()
             if (accountStore.dirty) return@withLock LogoutResult.Unsynced
         }
         cancelTimers()
+        // Trwale przed kasowaniem: jeśli proces zginie między kasowaniem a logoutLocally, telefon zostaje
+        // zalogowany z decyzją do podjęcia (nic nie wysyła, następna decyzja po cichu przywraca kopię), a nie jako
+        // właściciel pustych danych, które nadpisałyby jedyną kopię.
+        account.releaseDataOwner()
+        wipeLocal()
         account.session()?.let { s ->
             s.dek.fill(0)
             api.logout(s.token) // błąd (np. brak sieci) nie zatrzymuje wylogowania; sesja i tak wygaśnie
         }
-        repository.wipeAll()
-        // resetSynced przywraca SyncedSettings(); kolektor rozpozna to jako własny zapis
-        synchronized(lock) { knownSynced = SyncedSettings() }
-        settings.resetSynced()
         account.logoutLocally()
         cancelTimers()
-        _pendingChoice.value = null
+        clearChoice()
         synchronized(lock) {
             conflict = false
             failed = false
@@ -211,7 +246,7 @@ class BackupSync(
         if (current !is AccountState.LoggedIn) {
             // bez sesji nic nie wysyłamy; zmiany czekają w dirty do następnego logowania (spec §6.8)
             cancelTimers()
-            _pendingChoice.value = null
+            clearChoice()
             synchronized(lock) {
                 failed = false
                 refresh()
@@ -228,17 +263,28 @@ class BackupSync(
         }
         when {
             // start aplikacji z nierozstrzygniętą decyzją (proces zginął przy pytaniu albo bez sieci): ponów ją
-            previous == null && account.decisionPending -> scope.launch { ops.withLock { decideLocked() } }
+            previous == null && account.decisionPending -> scope.launch(guard) { ops.withLock { decideLocked() } }
             // R6: pierwsza kopia po rejestracji, zaległe zmiany przy starcie i po ponownym logowaniu
             accountStore.dirty && canAutoUpload() -> launchUpload()
         }
     }
 
-    private suspend fun decideLocked(): AfterLogin {
+    // R20: nieoczekiwany wyjątek kończy się Failed; decyzja zostaje nierozstrzygnięta, dirty bez zmian
+    private suspend fun decideLocked(): AfterLogin = try {
+        decideUnguarded()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        onCrash(e)
+        AfterLogin.Failed(ApiError.Server)
+    }
+
+    private suspend fun decideUnguarded(): AfterLogin {
         val s = account.session() ?: return AfterLogin.Failed(ApiError.Unauthorized)
         try {
             val owner = accountStore.dataOwnerUserId
             val pending = owner != s.userId
+            val fromOtherAccount = owner != null && owner != s.userId
             val backup = when (val r = api.getBackup(s.token)) {
                 is ApiResult.Err -> {
                     failure(s, r)
@@ -248,17 +294,21 @@ class BackupSync(
                 is ApiResult.Ok -> r.value
             }
             if (backup.blob == null) {
+                // R21: cudzych danych nie kopiujemy po cichu na nowe konto; użytkownik wybiera
+                if (fromOtherAccount) {
+                    return raiseChoice(AfterLogin.NeedsChoice(fromOtherAccount = true), emptyAccount = true)
+                }
                 // konto bez kopii (nowe albo po resecie bez kodu, R7): dane z telefonu stają się kopią, także puste
                 accountStore.backupVersion = backup.version
                 markDirty()
                 account.confirmDataOwner()
-                _pendingChoice.value = null
+                clearChoice()
                 uploadLocked()
                 return AfterLogin.Uploaded
             }
             if (!pending && backup.version == accountStore.backupVersion) {
                 // to samo konto i nikt nic nie zapisał od naszej ostatniej kopii: zwykła synchronizacja (§6.8.3)
-                _pendingChoice.value = null
+                clearChoice()
                 uploadLocked()
                 return AfterLogin.Uploaded
             }
@@ -266,20 +316,19 @@ class BackupSync(
             if (local.medications.isEmpty() && local.history.isEmpty()) {
                 if (!restoreLocked(s, backup)) return AfterLogin.Failed(ApiError.UnreadableBackup)
                 account.confirmDataOwner()
-                _pendingChoice.value = null
+                clearChoice()
                 return AfterLogin.Restored
             }
-            val choice = AfterLogin.NeedsChoice(fromOtherAccount = owner != null && owner != s.userId)
-            _pendingChoice.value = choice
-            return choice
+            return raiseChoice(AfterLogin.NeedsChoice(fromOtherAccount), emptyAccount = false)
         } finally {
             s.dek.fill(0)
         }
     }
 
     // Odszyfrowanie i odczyt przed jakąkolwiek zmianą; każdy błąd (zły klucz lub AAD, uszkodzony blob, nieznany
-    // format, błąd bazy) zostawia dane lokalne bez zmian.
-    private suspend fun restoreLocked(s: Session, backup: RemoteBackup): Boolean {
+    // format, błąd bazy) zostawia dane lokalne bez zmian. [epoch] z przejęcia trafia do pliku konta dopiero razem
+    // z przywróconymi danymi.
+    private suspend fun restoreLocked(s: Session, backup: RemoteBackup, epoch: Long? = null): Boolean {
         val blob = backup.blob ?: return false
         val snapshot = try {
             SnapshotCodec.decode(decryptBlob(s.dek, blob, blobAad(s.userId)))
@@ -296,6 +345,7 @@ class BackupSync(
         }
         synchronized(lock) { knownSynced = snapshot.settings }
         settings.applySynced(snapshot.settings)
+        epoch?.let { accountStore.epoch = it }
         accountStore.backupVersion = backup.version
         accountStore.lastBackupAt = clock.instant()
         synchronized(lock) {
@@ -312,6 +362,8 @@ class BackupSync(
         if (!accountStore.dirty) return ApiResult.Ok(Unit)
         // przed decyzją po logowaniu dane telefonu mogą należeć do innego konta (R17)
         if (account.decisionPending) return ApiResult.Err(ApiError.Conflict)
+        // po 409 nic nie wysyłamy (także ręcznie i przy wylogowaniu), dopóki użytkownik nie wybierze w resolve
+        if (synchronized(lock) { conflict }) return ApiResult.Err(ApiError.Conflict)
         val s = account.session() ?: return ApiResult.Err(ApiError.Unauthorized)
         val seq = synchronized(lock) {
             uploading = true
@@ -356,17 +408,17 @@ class BackupSync(
         }
     }
 
-    // zrzut idzie kolejką zapisów repozytorium, więc zawiera każdą zmianę sprzed wywołania
-    private suspend fun put(s: Session): ApiResult<PutOutcome> {
-        val plain = try {
-            SnapshotCodec.encode(repository.dumpSnapshot(currentSynced()), clock.instant())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return ApiResult.Err(ApiError.Server)
-        }
+    // Zrzut idzie kolejką zapisów repozytorium, więc zawiera każdą zmianę sprzed wywołania. Nieoczekiwany wyjątek
+    // (baza, kodowanie, klient HTTP) to zwykła nieudana próba: Failed, dirty zostaje, ponowienie (R20).
+    private suspend fun put(s: Session): ApiResult<PutOutcome> = try {
+        val plain = SnapshotCodec.encode(repository.dumpSnapshot(currentSynced()), clock.instant())
         val blob = encryptBlob(s.dek, plain, blobAad(s.userId))
-        return api.putBackup(s.token, s.epoch, accountStore.backupVersion, blob)
+        api.putBackup(s.token, s.epoch, accountStore.backupVersion, blob)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logFailure(e)
+        ApiResult.Err(ApiError.Server)
     }
 
     // 401: U13 bez kasowania czegokolwiek (spec §6.8); dirty zostaje, wysyłanie stoi do następnego LoggedIn
@@ -380,7 +432,7 @@ class BackupSync(
             _pendingChoice.value == null && !synchronized(lock) { conflict }
 
     private fun launchUpload() {
-        scope.launch { ops.withLock { if (canAutoUpload()) uploadLocked() } }
+        scope.launch(guard) { ops.withLock { if (canAutoUpload()) uploadLocked() } }
     }
 
     // Odliczanie i ponowienie tylko uruchamiają osobne wysyłanie: anulowanie timera nie przerywa trwającego PUT.
@@ -389,7 +441,7 @@ class BackupSync(
         retryJob = null
         retryDelay = FIRST_RETRY_MILLIS
         debounceJob?.cancel()
-        debounceJob = scope.launch {
+        debounceJob = scope.launch(guard) {
             delay(debounceMillis)
             launchUpload()
         }
@@ -399,11 +451,11 @@ class BackupSync(
         retryJob?.cancel()
         val wait = retryDelay
         retryDelay = minOf(wait * 2, MAX_RETRY_MILLIS)
-        retryJob = scope.launch {
+        retryJob = scope.launch(guard) {
             delay(wait)
             when {
                 !account.decisionPending -> launchUpload()
-                _pendingChoice.value == null -> scope.launch { ops.withLock { decideLocked() } }
+                _pendingChoice.value == null -> scope.launch(guard) { ops.withLock { decideLocked() } }
             }
         }
     }
@@ -423,11 +475,54 @@ class BackupSync(
     }
 
     private fun settled() {
-        _pendingChoice.value = null
+        clearChoice()
         synchronized(lock) {
             conflict = false
             refresh()
         }
+    }
+
+    private fun raiseChoice(choice: AfterLogin.NeedsChoice, emptyAccount: Boolean): AfterLogin.NeedsChoice {
+        choiceForEmptyAccount = emptyAccount
+        _pendingChoice.value = choice
+        return choice
+    }
+
+    private fun clearChoice() {
+        _pendingChoice.value = null
+        choiceForEmptyAccount = false
+    }
+
+    // kasuje dane telefonu i zsynchronizowane ustawienia; własny zapis ustawień nie oznacza zmian (R15)
+    private suspend fun wipeLocal() {
+        repository.wipeAll()
+        // resetSynced przywraca SyncedSettings(); kolektor rozpozna to jako własny zapis
+        synchronized(lock) { knownSynced = SyncedSettings() }
+        settings.resetSynced()
+    }
+
+    // kolektory nie mogą zginąć od wyjątku, bo to koniec automatycznej kopii (R20)
+    private inline fun guarded(block: () -> Unit) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            onCrash(e)
+        }
+    }
+
+    private fun onCrash(e: Throwable) {
+        logFailure(e)
+        synchronized(lock) {
+            failed = true
+            refresh()
+        }
+    }
+
+    // tylko klasa wyjątku: komunikat mógłby zawierać dane konta
+    private fun logFailure(e: Throwable) {
+        Log.e(TAG, "Kopia zapasowa: nieoczekiwany błąd ${e.javaClass.name}")
     }
 
     // pod [lock]
@@ -446,6 +541,7 @@ class BackupSync(
     private fun currentSynced() = settings.state.value.let { SyncedSettings(it.theme, it.snoozeMinutes) }
 
     private companion object {
+        const val TAG = "BackupSync"
         const val DEBOUNCE_MILLIS = 5_000L
         const val FIRST_RETRY_MILLIS = 30_000L
         const val MAX_RETRY_MILLIS = 5 * 60_000L

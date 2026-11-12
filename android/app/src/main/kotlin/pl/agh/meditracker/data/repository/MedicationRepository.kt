@@ -100,10 +100,11 @@ class MedicationRepository(
 
     private fun persist(write: MedicationStore.() -> Unit) {
         val store = store ?: return
-        _changes.tryEmit(Unit)
         writes.launch {
             runCatching { store.write() }.onFailure { Log.e("MedicationRepository", "Zapis do bazy nie powiódł się", it) }
         }
+        // sygnał dopiero po zakolejkowaniu zapisu: zrzut zlecony przez odbiorcę sygnału na pewno go zawiera
+        _changes.tryEmit(Unit)
     }
 
     // czeka, aż wszystkie dotychczasowe zmiany będą w bazie (np. zanim system zamknie proces po akcji z powiadomienia)

@@ -508,6 +508,19 @@ class AccountRepositoryTest {
     }
 
     @Test
+    fun releaseDataOwnerMakesDecisionPendingAndKeepsSession() = runTest {
+        val repo = repo()
+        repo.registered()
+        assertFalse(repo.decisionPending)
+
+        repo.releaseDataOwner()
+        assertNull(store.dataOwnerUserId)
+        assertTrue("trwale: przeżywa restart", repo().decisionPending)
+        assertTrue(repo.state.value is AccountState.LoggedIn)
+        assertNotNull(repo.session())
+    }
+
+    @Test
     fun logoutLocallyClearsStoreAndDataOwner() = runTest {
         val repo = repo()
         repo.registered()
