@@ -1,6 +1,7 @@
 package pl.agh.meditracker.data.repository
 
 import android.util.Log
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -32,11 +33,13 @@ import java.time.LocalTime
 import java.util.UUID
 
 // Stan w pamięci (StateFlow dla UI) z zapisem do bazy: każda zmiana trafia do store po kolei, poza wątkiem UI.
-// Bez store (testy) repozytorium działa tylko w pamięci.
+// Bez store (testy) repozytorium działa tylko w pamięci. [writeDispatcher] musi wykonywać jedno zadanie naraz
+// (testy podają dyspozytor z wirtualnym czasem).
 class MedicationRepository(
     private val clock: Clock = Clock.systemDefaultZone(),
     private val store: MedicationStore? = null,
     initial: StoredState = StoredState(),
+    writeDispatcher: CoroutineDispatcher = serialIo(),
 ) {
     // leki i wersje ich harmonogramów w jednym stanie, żeby nikt nie zobaczył niespójnej pary
     private data class Core(
@@ -63,8 +66,7 @@ class MedicationRepository(
     private fun schedulesOf(id: String) = core.value.schedules[id]
 
     // jeden wątek naraz, więc zapisy wykonują się w kolejności wywołań
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private val writes = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    private val writes = CoroutineScope(SupervisorJob() + writeDispatcher)
 
     // sygnał po każdej zaplanowanej zmianie (kopia zapasowa); reload() go nie wysyła
     private val _changes = MutableSharedFlow<Unit>(extraBufferCapacity = 64)
@@ -185,3 +187,6 @@ class MedicationRepository(
         c.copy(medications = c.medications.map { if (it.id == medicationId) it.copy(stock = (it.stock + delta).coerceAtLeast(0)) else it })
     }
 }
+
+@OptIn(ExperimentalCoroutinesApi::class)
+private fun serialIo(): CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)

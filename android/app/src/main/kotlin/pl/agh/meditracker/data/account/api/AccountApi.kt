@@ -8,10 +8,13 @@ sealed interface ApiResult<out T> {
     data class Err(val error: ApiError) : ApiResult<Nothing>
 }
 
-/** Błędy zmapowane z kodu `error` w odpowiedzi serwera; brak sieci to [Network]. */
+/**
+ * Błędy zmapowane z kodu `error` w odpowiedzi serwera; brak sieci to [Network]. [UnreadableBackup] powstaje tylko
+ * na telefonie: konto nie ma kopii albo nie da się jej odszyfrować ani odczytać (dane lokalne zostają bez zmian).
+ */
 enum class ApiError {
     Network, InvalidInput, InvalidCode, InvalidCredentials, Unauthorized, InvalidToken,
-    InvalidRecovery, Conflict, TooLarge, RateLimited, Server
+    InvalidRecovery, Conflict, TooLarge, RateLimited, Server, UnreadableBackup
 }
 
 class LoginResult(

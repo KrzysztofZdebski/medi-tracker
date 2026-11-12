@@ -15,6 +15,7 @@ import okhttp3.OkHttpClient
 import pl.agh.meditracker.BuildConfig
 import pl.agh.meditracker.data.account.AccountRepository
 import pl.agh.meditracker.data.account.AccountStore
+import pl.agh.meditracker.data.account.BackupSync
 import pl.agh.meditracker.data.account.KeystoreSecretBox
 import pl.agh.meditracker.data.account.api.HttpAccountApi
 import pl.agh.meditracker.data.catalog.CatalogRepository
@@ -23,6 +24,7 @@ import pl.agh.meditracker.data.settings.SettingsStore
 import pl.agh.meditracker.data.user.RoomMedicationStore
 import pl.agh.meditracker.data.user.UserDatabase
 import pl.agh.meditracker.reminder.ReminderScheduler
+import java.time.Clock
 
 class AppContainer(context: Context) {
     private val store = RoomMedicationStore(UserDatabase.open(context).dao())
@@ -35,13 +37,18 @@ class AppContainer(context: Context) {
     val reminders = ReminderScheduler(context, medications, settings)
 
     // konstrukcja bez sieci; Keystore dopiero przy pierwszym odczycie lub zapisie sekretu
-    val account = AccountRepository(
-        HttpAccountApi(BuildConfig.SERVER_URL, OkHttpClient()),
-        AccountStore(context.getSharedPreferences("account", Context.MODE_PRIVATE), KeystoreSecretBox()),
+    private val accountApi = HttpAccountApi(BuildConfig.SERVER_URL, OkHttpClient())
+    private val accountStore = AccountStore(context.getSharedPreferences("account", Context.MODE_PRIVATE), KeystoreSecretBox())
+    val account = AccountRepository(accountApi, accountStore)
+
+    // kopia zapasowa rusza dopiero w start() (MediTrackerApp.onCreate), więc sama konstrukcja nie sięga do sieci
+    val backup = BackupSync(
+        medications, settings, account, accountStore, accountApi,
+        CoroutineScope(SupervisorJob() + Dispatchers.IO), Clock.systemDefaultZone(),
     )
 }
 
-// open: testy Robolectric podmieniają onCreate, żeby nie startować synchronizacji katalogu z sieci
+// open: testy Robolectric podmieniają onCreate, żeby nie startować synchronizacji katalogu ani kopii z sieci
 open class MediTrackerApp : Application() {
     lateinit var container: AppContainer
 
@@ -50,6 +57,7 @@ open class MediTrackerApp : Application() {
         container = AppContainer(this)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         container.reminders.start(scope)
+        container.backup.start()
         scope.launch { runCatching { container.catalog.sync() } }
     }
 }

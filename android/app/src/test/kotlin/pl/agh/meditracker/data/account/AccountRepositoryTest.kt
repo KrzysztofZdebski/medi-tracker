@@ -131,7 +131,7 @@ class AccountRepositoryTest {
     }
 
     @Test
-    fun loginStoresSessionEpochAndBackupVersion() = runTest {
+    fun loginStoresSessionAndEpoch() = runTest {
         repo().registered()
         api.account(EMAIL).version = 7
         val repo = repo(otherStore)
@@ -141,8 +141,27 @@ class AccountRepositoryTest {
         assertEquals(AccountState.LoggedIn(EMAIL, userId), repo.state.value)
         assertEquals(1L, otherStore.epoch)
         assertEquals(api.account(EMAIL).epoch, repo.session()!!.epoch)
-        assertEquals(7L, otherStore.backupVersion)
+        // wersję bazową ustala dopiero decyzja po logowaniu (GET albo przejęcie, R12)
+        assertNull(otherStore.backupVersion)
         assertEquals(EMAIL, otherStore.email)
+    }
+
+    @Test
+    fun reloginToSameAccountKeepsLastSyncedBackupVersion() = runTest {
+        val repo = repo()
+        repo.registered()
+        store.backupVersion = 4
+        api.account(EMAIL).version = 9 // inny telefon zapisał w międzyczasie
+        repo.onUnauthorized(store.token!!)
+
+        assertEquals(ok(LoginNext.Ready(9L)), repo.login(EMAIL, pw()))
+        assertEquals("następny PUT dostanie 409 zamiast nadpisać cudzą kopię", 4L, store.backupVersion)
+
+        // po zalogowaniu na inne konto stara wersja nie ma znaczenia
+        repo(otherStore).registered("ola@x.pl")
+        repo.onUnauthorized(store.token!!)
+        repo.login("ola@x.pl", pw())
+        assertNull(store.backupVersion)
     }
 
     @Test
@@ -486,6 +505,25 @@ class AccountRepositoryTest {
         // dane na telefonie zostają i wciąż wiadomo, z którego konta pochodzą
         assertEquals(userId, store.dataOwnerUserId)
         assertEquals(AccountState.LoggedOut, repo().state.value)
+    }
+
+    @Test
+    fun logoutLocallyClearsStoreAndDataOwner() = runTest {
+        val repo = repo()
+        repo.registered()
+
+        repo.logoutLocally()
+        assertEquals(AccountState.LoggedOut, repo.state.value)
+        assertNull(repo.session())
+        assertNull(store.token)
+        assertNull(store.dek)
+        assertNull(store.email)
+        assertNull(store.epoch)
+        assertFalse(store.dirty)
+        // dane telefonu są skasowane, więc nie należą do nikogo
+        assertNull(store.dataOwnerUserId)
+        assertEquals(AccountState.LoggedOut, repo().state.value)
+        assertFalse(repo.decisionPending)
     }
 
     @Test

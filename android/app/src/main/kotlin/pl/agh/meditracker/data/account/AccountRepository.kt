@@ -54,14 +54,14 @@ data class KdfBounds(
 }
 
 /**
- * Wszystkie przepływy konta (spec §6.1–6.8 bez wylogowania). Argon2 liczy się na [cpu]. Hasła (CharArray) są
- * zerowane po użyciu, tak jak wyprowadzone klucze. [kdf] to parametry nowych poświadczeń (rejestracja, zmiana
+ * Wszystkie przepływy konta (spec §6.1–6.8; wylogowanie prowadzi BackupSync, tu tylko [logoutLocally]). Argon2
+ * liczy się na [cpu]. Hasła (CharArray) są zerowane po użyciu, tak jak wyprowadzone klucze. [kdf] to parametry nowych poświadczeń (rejestracja, zmiana
  * i reset hasła); testy podają mniejsze razem z luźniejszymi [kdfBounds].
  *
  * Każdy przepływ, który czyta lub zmienia stan konta (store, reset w pamięci, [state]), biegnie pod jednym
  * [mutex]: np. dwa szybkie „Utwórz konto” albo logowanie w trakcie rejestracji nie mogą przeplatać zapisów, bo
  * lokalny pending i auth_hash na serwerze by się rozjechały. Bez blokady są tylko odczyty ([state], [session],
- * [decisionPending]) i [markLoggedOut].
+ * [decisionPending]).
  */
 class AccountRepository(
     private val api: AccountApi,
@@ -218,9 +218,14 @@ class AccountRepository(
                 api.logout(r.token)
                 return ApiResult.Err(ApiError.InvalidCredentials)
             }
+            // Wersja bazowa PUT to wersja, którą ten telefon ostatnio zgrał z serwerem (R12), nie ta z logowania:
+            // przy ponownym logowaniu na to samo konto zwykła synchronizacja (spec §6.8.3) dostanie wtedy 409,
+            // jeśli inny telefon zapisał coś w międzyczasie, zamiast cicho nadpisać jego kopię. Dla innego konta
+            // wersję ustala dopiero decyzja po logowaniu (BackupSync).
+            val keepVersion = store.backupVersion.takeIf { store.dataOwnerUserId == r.userId }
             store.startSession(
                 normalized, r.userId, r.token, dek, r.epoch,
-                backupVersion = r.backupVersion, pending = null, claimData = false,
+                backupVersion = keepVersion, pending = null, claimData = false,
             )
             dek.fill(0)
             _state.value = AccountState.LoggedIn(normalized, r.userId)
@@ -404,9 +409,16 @@ class AccountRepository(
         _state.value = fromStore()
     }
 
-    /** Wywoływane przez wylogowanie (BackupSync, Task 11) po wyczyszczeniu [AccountStore]. */
-    internal fun markLoggedOut() {
-        _state.value = AccountState.LoggedOut
+    /**
+     * Lokalna połowa wylogowania (R19), wołana przez BackupSync po skasowaniu danych telefonu: cały plik konta
+     * razem z [AccountStore.dataOwnerUserId] (telefon nie ma już danych, więc nie mają właściciela).
+     */
+    suspend fun logoutLocally() {
+        mutex.withLock {
+            store.clear()
+            store.dataOwnerUserId = null
+            _state.value = AccountState.LoggedOut
+        }
     }
 
     /** Sesja dla BackupSync; null, gdy nie jesteśmy zalogowani. `dek` to kopia, wołający może ją wyzerować. */
