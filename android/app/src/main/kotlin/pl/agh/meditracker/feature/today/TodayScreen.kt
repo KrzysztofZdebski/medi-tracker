@@ -46,6 +46,7 @@ import pl.agh.meditracker.ui.components.NotificationsAction
 import pl.agh.meditracker.ui.components.SecondaryButton
 import pl.agh.meditracker.core.MediTrackerApp
 import androidx.compose.ui.platform.LocalContext
+import pl.agh.meditracker.feature.settings.SyncConflictBanner
 import pl.agh.meditracker.feature.settings.rememberNotificationAccess
 
 @Composable
@@ -73,15 +74,18 @@ fun TodayScreen(onAddMedication: () -> Unit, onOpenHistory: () -> Unit, onNotifi
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0),
     ) { padding ->
-        TodayContent(
-            state = state,
-            onAddMedication = onAddMedication,
-            onOpenHistory = onOpenHistory,
-            onOpen = { dose -> if (dose.status == DoseStatus.Pending || dose.status == DoseStatus.Snoozed) viewModel.open(dose) else onOpenMedication(dose.medication.id) },
-            onTake = viewModel::take,
-            modifier = Modifier.padding(padding),
-            remindersEnabled = preferences.remindersEnabled && notificationAccess.allowed,
-        )
+        Column(Modifier.padding(padding)) {
+            SyncConflictBanner(Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            TodayContent(
+                state = state,
+                onAddMedication = onAddMedication,
+                onOpenHistory = onOpenHistory,
+                onOpen = { dose -> if (dose.status == DoseStatus.Pending || dose.status == DoseStatus.Snoozed) viewModel.open(dose) else onOpenMedication(dose.medication.id) },
+                onTake = viewModel::take,
+                modifier = Modifier.weight(1f),
+                remindersEnabled = preferences.remindersEnabled && notificationAccess.allowed,
+            )
+        }
     }
     TodaySheets(
         sheet = state.sheet,

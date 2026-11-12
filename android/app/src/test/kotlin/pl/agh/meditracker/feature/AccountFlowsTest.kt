@@ -159,6 +159,56 @@ class AccountFlowsTest {
         assertFalse("putBackup" in app.api.calls)
     }
 
+    @Test fun logoutFromSettingsWipesPhoneAndShowsLoggedOutRow() {
+        runBlocking {
+            account.registered(ANNA)
+            app.container.medications.add(
+                Medication(
+                    name = "Metformina", strength = "500 mg", form = "tabletki", unit = DoseUnit.Tablet,
+                    schedule = Schedule(1, DayOfWeek.entries.toSet(), listOf(LocalTime.of(8, 0)), LocalDate.now()),
+                    stock = 30, refillThreshold = 5,
+                ),
+            )
+        }
+        assertTrue(app.container.medications.medications.value.isNotEmpty())
+        compose.setContent { MediTrackerTheme { AppNavHost(true, {}) } }
+        compose.onNode(hasText("Ustawienia") and hasClickAction()).performClick()
+        compose.onNodeWithText("anna@x.pl").assertIsDisplayed()
+        compose.onNodeWithText("Moje konto").performClick()
+        compose.onNodeWithText("Twoje konto").assertIsDisplayed()
+        compose.onNodeWithText("Wyloguj się").performClick()
+        compose.onNodeWithText("Wylogować się?").assertIsDisplayed()
+        compose.onAllNodesWithText("Wyloguj się").onLast().performClick()
+        waitForText("Zaloguj się lub utwórz konto")
+
+        assertTrue(account.state.value is AccountState.LoggedOut)
+        assertTrue("leki zniknęły z telefonu", app.container.medications.medications.value.isEmpty())
+        compose.onNodeWithText("Moje konto").assertDoesNotExist()
+    }
+
+    @Test fun conflictBannerOnTodayOpensChoiceAndKeepingPhoneDataResolvesIt() {
+        runBlocking {
+            account.registered(ANNA)
+            app.container.medications.add(
+                Medication(
+                    name = "Metformina", strength = "500 mg", form = "tabletki", unit = DoseUnit.Tablet,
+                    schedule = Schedule(1, DayOfWeek.entries.toSet(), listOf(LocalTime.of(8, 0)), LocalDate.now()),
+                    stock = 30, refillThreshold = 5,
+                ),
+            )
+            // inny telefon przejął konto: epoch na serwerze poszedł do przodu, następne wysłanie dostaje 409
+            app.api.account(ANNA).epoch += 1
+            app.container.backup.upload()
+        }
+        compose.setContent { MediTrackerTheme { AppNavHost(true, {}) } }
+        waitForText("Konto jest używane na innym urządzeniu")
+        compose.onNodeWithText("Konto jest używane na innym urządzeniu").performClick()
+        compose.onNodeWithText("Co zrobić z danymi?").assertIsDisplayed()
+        compose.onNodeWithText("Zachowaj dane z tego telefonu").performClick()
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Co zrobić z danymi?").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithText("Konto jest używane na innym urządzeniu").assertDoesNotExist()
+    }
+
     private fun waitForText(text: String) =
         compose.waitUntil(15_000) { compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
 }

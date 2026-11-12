@@ -41,6 +41,11 @@ import pl.agh.meditracker.feature.today.TodayScreen
 import pl.agh.meditracker.ui.components.AppBottomBar
 import pl.agh.meditracker.feature.history.HistoryScreen
 import pl.agh.meditracker.feature.medicationdetails.MedicationDetailsScreen
+import pl.agh.meditracker.feature.settings.AccountScreen
+import pl.agh.meditracker.feature.settings.ChangePasswordScreen
+import pl.agh.meditracker.feature.settings.ChangePasswordViewModel
+import pl.agh.meditracker.feature.settings.ConflictChoiceHost
+import pl.agh.meditracker.feature.settings.PasswordChangedContent
 import pl.agh.meditracker.feature.settings.SettingsScreen
 import pl.agh.meditracker.feature.settings.NotificationSettingsScreen
 import pl.agh.meditracker.feature.settings.AboutScreen
@@ -263,12 +268,47 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
                     )
                 }
                 composable("history") { HistoryScreen(onOpenToday = { nav.openTab("today") }, onNotifications = { nav.navigate("notifications") }) }
-                composable("settings") { SettingsScreen(onNotifications = { nav.navigate("notifications") }, onAbout = { nav.navigate("about") }) }
+                composable("settings") {
+                    SettingsScreen(
+                        onAccount = { state ->
+                            nav.navigate(
+                                when (state) {
+                                    is AccountState.LoggedIn -> "account"
+                                    is AccountState.SessionExpired -> authRoute(SESSION_EXPIRED, FROM_SETTINGS)
+                                    else -> authRoute(LOGIN, FROM_SETTINGS)
+                                },
+                            )
+                        },
+                        onNotifications = { nav.navigate("notifications") },
+                        onAbout = { nav.navigate("about") },
+                    )
+                }
+                composable("account") {
+                    AccountScreen(
+                        onBack = { nav.popBackStack() },
+                        onChangePassword = { nav.navigate("account/password") },
+                        // po wylogowaniu i usunięciu konta wiersz w ustawieniach pokazuje już "Zaloguj się lub utwórz konto"
+                        onSignedOut = { nav.popBackStack("settings", inclusive = false) },
+                    )
+                }
+                composable("account/password") {
+                    ChangePasswordScreen(
+                        appViewModel { ChangePasswordViewModel(it.account::changePassword) },
+                        onBack = { nav.popBackStack() },
+                        onSaved = { nav.navigate("account/password/done") { popUpTo("account/password") { inclusive = true } } },
+                    )
+                }
+                composable("account/password/done") {
+                    val backToAccount = { nav.popBackStack("account", inclusive = false); Unit }
+                    BackHandler(onBack = backToAccount)
+                    PasswordChangedContent(backToAccount)
+                }
                 composable("notifications") { NotificationSettingsScreen(onBack = { nav.popBackStack() }, onOpenSettings = { nav.openTab("settings") }) }
                 composable("about") { AboutScreen(onBack = { nav.popBackStack() }) }
             }
         }
         RestoreChoiceHost()
+        ConflictChoiceHost()
     }
 }
 
