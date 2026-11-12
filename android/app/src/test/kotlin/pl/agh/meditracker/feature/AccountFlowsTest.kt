@@ -1,5 +1,6 @@
 package pl.agh.meditracker.feature
 
+import pl.agh.meditracker.data.user.useDirectRoomExecutors
 import android.content.Context
 import android.os.Looper
 import androidx.activity.ComponentActivity
@@ -54,13 +55,14 @@ private const val PASSWORD = "dobre-haslo-123"
 class AccountFlowApp : MediTrackerApp() {
     val api = FakeAccountApi()
     val box = PlainSecretBox()
-    override fun onCreate() { container = AppContainer(this, api, box, FAST, BOUNDS) }
+    override fun onCreate() { useDirectRoomExecutors(); container = AppContainer(this, api, box, FAST, BOUNDS) }
 }
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h859dp-mdpi", application = AccountFlowApp::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class AccountFlowsTest {
+    @get:org.junit.Rule val drainWrites = pl.agh.meditracker.data.user.DrainAppWritesRule()
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val app get() = RuntimeEnvironment.getApplication() as AccountFlowApp
     private val account get() = app.container.account

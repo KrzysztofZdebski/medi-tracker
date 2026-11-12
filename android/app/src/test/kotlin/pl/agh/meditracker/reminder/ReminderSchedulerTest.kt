@@ -1,5 +1,6 @@
 package pl.agh.meditracker.reminder
 
+import pl.agh.meditracker.data.user.useDirectRoomExecutors
 import android.Manifest
 import android.app.AlarmManager
 import android.app.Notification
@@ -39,6 +40,7 @@ import java.time.ZoneId
 // bez synchronizacji katalogu z sieci i bez schedulera działającego w tle
 class TestApp : MediTrackerApp() {
     override fun onCreate() {
+        useDirectRoomExecutors()
         container = AppContainer(this)
     }
 }
@@ -53,6 +55,7 @@ private fun medication(start: LocalDate) = Medication(
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestApp::class)
 class ReminderSchedulerTest {
+    @get:org.junit.Rule val drainWrites = pl.agh.meditracker.data.user.DrainAppWritesRule()
     private val app = RuntimeEnvironment.getApplication()
     private val zone = ZoneId.systemDefault()
     private val today = LocalDate.of(2026, 11, 6)
@@ -103,6 +106,7 @@ class ReminderSchedulerTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestApp::class)
 class ReminderReceiverTest {
+    @get:org.junit.Rule val drainWrites = pl.agh.meditracker.data.user.DrainAppWritesRule()
     private val app = RuntimeEnvironment.getApplication() as TestApp
     private val container = app.container
     private val notifications = shadowOf(app.getSystemService(NotificationManager::class.java))

@@ -27,6 +27,7 @@ import java.io.File
 @Config(sdk = [35], qualifiers = "w412dp-h859dp-mdpi", application = NavigationTestApp::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class AccountScreensTest {
+    @get:org.junit.Rule val drainWrites = pl.agh.meditracker.data.user.DrainAppWritesRule()
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     private fun screenshot(name: String) {

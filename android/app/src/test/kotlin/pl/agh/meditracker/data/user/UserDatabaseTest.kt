@@ -1,6 +1,5 @@
 package pl.agh.meditracker.data.user
 
-import androidx.room.Room
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -27,8 +26,9 @@ import java.time.ZoneId
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestApp::class)
 class UserDatabaseTest {
+    @get:org.junit.Rule val drainWrites = pl.agh.meditracker.data.user.DrainAppWritesRule()
     private val app = RuntimeEnvironment.getApplication()
-    private val db = Room.inMemoryDatabaseBuilder(app, UserDatabase::class.java).allowMainThreadQueries().build()
+    private val db = inMemoryUserDatabase(app)
     private val store = RoomMedicationStore(db.dao())
     private val zone = ZoneId.systemDefault()
     private val today = LocalDate.of(2026, 11, 6)

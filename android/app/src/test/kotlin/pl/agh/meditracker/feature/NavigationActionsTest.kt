@@ -1,5 +1,6 @@
 package pl.agh.meditracker.feature
 
+import pl.agh.meditracker.data.user.useDirectRoomExecutors
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -19,13 +20,14 @@ import java.time.*
 
 // Real repositories and navigation; no network sync or background alarm observer in UI tests.
 class NavigationTestApp : MediTrackerApp() {
-    override fun onCreate() { container = AppContainer(this) }
+    override fun onCreate() { useDirectRoomExecutors(); container = AppContainer(this) }
 }
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h859dp-mdpi", application = NavigationTestApp::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class NavigationActionsTest {
+    @get:org.junit.Rule val drainWrites = pl.agh.meditracker.data.user.DrainAppWritesRule()
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val app get() = RuntimeEnvironment.getApplication() as NavigationTestApp
 

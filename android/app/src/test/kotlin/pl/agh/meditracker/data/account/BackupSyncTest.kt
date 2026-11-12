@@ -2,7 +2,7 @@ package pl.agh.meditracker.data.account
 
 import android.app.Application
 import android.content.Context
-import androidx.room.Room
+import pl.agh.meditracker.data.user.inMemoryUserDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -81,14 +81,14 @@ class BackupSyncTest {
     private val clock = Clock.fixed(today.atTime(9, 0).atZone(zone).toInstant(), zone)
 
     // ten telefon
-    private val db = Room.inMemoryDatabaseBuilder(context, UserDatabase::class.java).allowMainThreadQueries().build()
+    private val db = inMemoryUserDatabase(context)
     private val repo = MedicationRepository(clock, RoomMedicationStore(db.dao()), writeDispatcher = dispatcher)
     private val settings = SettingsStore(context)
     private val accountStore = AccountStore(prefs("account"), box)
     private val account = accountRepo(accountStore)
 
     // drugi telefon tego samego (albo innego) konta: własna baza i własny plik konta
-    private val otherDb = Room.inMemoryDatabaseBuilder(context, UserDatabase::class.java).allowMainThreadQueries().build()
+    private val otherDb = inMemoryUserDatabase(context)
     private val otherRepo = MedicationRepository(clock, RoomMedicationStore(otherDb.dao()), writeDispatcher = dispatcher)
     private val otherStore = AccountStore(prefs("other"), box)
     private val other = accountRepo(otherStore)

@@ -1,6 +1,5 @@
 package pl.agh.meditracker.data.user
 
-import androidx.room.Room
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -38,8 +37,8 @@ import java.util.zip.GZIPOutputStream
 @Config(sdk = [35], application = TestApp::class)
 class SnapshotTest {
     private val app = RuntimeEnvironment.getApplication()
-    private val db = Room.inMemoryDatabaseBuilder(app, UserDatabase::class.java).allowMainThreadQueries().build()
-    private val other = Room.inMemoryDatabaseBuilder(app, UserDatabase::class.java).allowMainThreadQueries().build()
+    private val db = inMemoryUserDatabase(app)
+    private val other = inMemoryUserDatabase(app)
     private val store = RoomMedicationStore(db.dao())
     private val otherStore = RoomMedicationStore(other.dao())
     private val zone = ZoneId.systemDefault()
