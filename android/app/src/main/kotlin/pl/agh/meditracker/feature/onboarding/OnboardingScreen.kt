@@ -27,14 +27,24 @@ import pl.agh.meditracker.ui.components.AppTopBar
 import pl.agh.meditracker.ui.components.IconBadge
 
 @Composable
-fun OnboardingScreen(onFinished: () -> Unit) {
-    val viewModel = appViewModel { OnboardingViewModel(it.settings) }
+fun OnboardingScreen(
+    onFinished: () -> Unit,
+    onCreateAccount: () -> Unit,
+    onLogin: () -> Unit,
+    // po rejestracji z O01 wracamy prosto do O02
+    startAtReminders: Boolean = false,
+) {
+    val viewModel = appViewModel { OnboardingViewModel(it.settings, if (startAtReminders) OnboardingStep.Reminders else OnboardingStep.Welcome) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         viewModel.setReminders(granted)
         onFinished()
     }
     when (viewModel.step) {
-        OnboardingStep.Welcome -> WelcomeContent(onStart = { viewModel.goTo(OnboardingStep.Reminders) })
+        OnboardingStep.Welcome -> WelcomeContent(
+            onCreateAccount = onCreateAccount,
+            onLogin = onLogin,
+            onSkip = { viewModel.goTo(OnboardingStep.Reminders) },
+        )
         OnboardingStep.Reminders -> {
             BackHandler { viewModel.goTo(OnboardingStep.Welcome) }
             RemindersContent(

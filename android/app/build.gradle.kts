@@ -15,6 +15,11 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1"
+
+        // adres serwera kont/kopii/katalogu; nadpisanie: -PserverUrl=http://10.0.2.2:8765 (bez końcowego ukośnika)
+        val serverUrl = (project.findProperty("serverUrl") as String?)
+            ?: "https://kryzys-server.tail9dde62.ts.net:10000"
+        buildConfigField("String", "SERVER_URL", "\"${serverUrl.trimEnd('/')}\"")
     }
 
     compileOptions {
@@ -24,9 +29,13 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions.unitTests.isIncludeAndroidResources = true
+
+    // bcprov i jspecify mają ten sam manifest OSGi (bez znaczenia na Androidzie)
+    packaging.resources.excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
 }
 
 // schemat user.db w repo, żeby kolejne wersje bazy miały z czym robić migracje
@@ -55,7 +64,10 @@ dependencies {
     implementation("com.caverock:androidsvg-aar:1.4")
     implementation("androidx.room:room-runtime:2.7.2")
     ksp("androidx.room:room-compiler:2.7.2")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.80")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.compose.ui:ui-test-junit4")

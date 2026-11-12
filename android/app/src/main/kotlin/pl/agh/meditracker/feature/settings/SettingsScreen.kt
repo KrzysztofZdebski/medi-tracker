@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -21,6 +23,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import pl.agh.meditracker.R
 import pl.agh.meditracker.core.MediTrackerApp
+import pl.agh.meditracker.data.account.AccountState
 import pl.agh.meditracker.data.notifications.NotificationAccess
 import pl.agh.meditracker.data.notifications.NotificationController
 import pl.agh.meditracker.data.settings.*
@@ -40,28 +43,41 @@ fun rememberNotificationAccess(refreshKey: Any? = null): NotificationAccess {
 }
 
 @Composable
-fun SettingsScreen(onNotifications: () -> Unit, onAbout: () -> Unit) {
+fun SettingsScreen(onAccount: (AccountState) -> Unit, onNotifications: () -> Unit, onAbout: () -> Unit) {
     val context = LocalContext.current
-    val settings = (context.applicationContext as MediTrackerApp).container.settings
+    val container = (context.applicationContext as MediTrackerApp).container
+    val settings = container.settings
     val preferences by settings.state.collectAsStateWithLifecycle()
+    val accountState by container.account.state.collectAsStateWithLifecycle()
     val access = rememberNotificationAccess()
-    SettingsContent(preferences, access, appVersion(context), onNotifications,
+    SettingsContent(preferences, access, appVersion(context), accountState, { onAccount(accountState) }, onNotifications,
         onSound = { NotificationController(context).openSettings(channel = true) },
-        onAbout = onAbout, onSnooze = { settings.snoozeMinutes = it }, onTheme = { settings.theme = it })
+        onAbout = onAbout, onSnooze = { settings.snoozeMinutes = it }, onTheme = { settings.theme = it },
+        banner = { SyncConflictBanner(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) })
 }
 
 @Composable
 fun SettingsContent(
     preferences: AppSettings, access: NotificationAccess, version: String,
+    accountState: AccountState, onAccount: () -> Unit,
     onNotifications: () -> Unit, onSound: () -> Unit, onAbout: () -> Unit,
     onSnooze: (Int) -> Unit, onTheme: (AppTheme) -> Unit,
+    banner: @Composable () -> Unit = {},
 ) {
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxSize().background(colors.background)) {
         AppTopBar("Ustawienia", designIcons = true, largeTitle = true, actions = { NotificationsAction(designIcon = true, onClick = onNotifications) })
+        banner()
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Caption("Dostosuj aplikację do siebie")
+            SettingsCard {
+                when (accountState) {
+                    is AccountState.LoggedIn -> AccountRow("Moje konto", accountState.email, onAccount)
+                    is AccountState.SessionExpired -> AccountRow("Moje konto", "Sesja wygasła — zaloguj się", onAccount)
+                    else -> AccountRow("Zaloguj się lub utwórz konto", "Kopia leków i historii na Twoim koncie", onAccount)
+                }
+            }
             Text("Przypomnienia", style = MaterialTheme.typography.titleMedium, color = colors.onBackground)
             SettingsCard {
                 SettingRow(R.raw.design_bell_24, "Powiadomienia", when { !access.allowed -> "Zablokowane w Androidzie"; preferences.remindersEnabled -> "Włączone"; else -> "Wyłączone" }, onNotifications)
@@ -91,11 +107,19 @@ internal fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun SettingRow(@RawRes icon: Int, title: String, subtitle: String, onClick: () -> Unit) {
+private fun AccountRow(title: String, subtitle: String, onClick: () -> Unit) =
+    SettingRowLayout({ Icon(Icons.Outlined.Person, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) }, title, subtitle, onClick)
+
+@Composable
+private fun SettingRow(@RawRes icon: Int, title: String, subtitle: String, onClick: () -> Unit) =
+    SettingRowLayout({ DesignIcon(icon, 24.dp, tint = MaterialTheme.colorScheme.primary) }, title, subtitle, onClick)
+
+@Composable
+private fun SettingRowLayout(icon: @Composable () -> Unit, title: String, subtitle: String, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Surface(onClick, color = colors.surface) {
         Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(horizontal = 12.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            DesignIcon(icon, 24.dp, tint = colors.primary)
+            icon()
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.bodyLarge)
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)

@@ -1,0 +1,30 @@
+name: meditracker
+
+services:
+  api:
+    build: .
+    ports:
+      - "127.0.0.1:8765:8080"
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite:///data/meditracker.db
+      CATALOG_DIR: /catalog
+      PUBLIC_URL: https://kryzys-server.tail9dde62.ts.net:10000
+    volumes:
+      - meditracker-data:/data
+      - meditracker-catalog:/catalog:ro
+    restart: unless-stopped
+
+  catalog:
+    build:
+      context: ..
+      dockerfile: server/catalog-job/Dockerfile
+    volumes:
+      - meditracker-catalog:/catalog
+    restart: unless-stopped
+
+volumes:
+  meditracker-data:
+    name: meditracker-data
+  meditracker-catalog:
+    name: meditracker-catalog

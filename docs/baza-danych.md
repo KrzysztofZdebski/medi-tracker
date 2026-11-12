@@ -11,8 +11,8 @@ Projekt bazy danych aplikacji (Kotlin, Android, SQLite).
 
 ## Najważniejsze decyzje
 
-1. **Przetwarzanie wyłącznie lokalne.** Dane użytkownika nie opuszczają telefonu; jedyną kopią poza urządzeniem jest szyfrowany end-to-end Android Auto Backup. 
-2. **SQLite przez Room jako jedyna baza.** Brak własnego backendu.
+1. **Przetwarzanie lokalne, opcjonalne konto.** Dane użytkownika są przetwarzane na telefonie. Konto jest opcjonalne. Dla użytkownika, który je założył, kopia zapasowa jest szyfrowana end-to-end na telefonie, więc na serwerze leży tylko szyfrogram (patrz §2). Jedyną kopią poza urządzeniem jest szyfrowana kopia konta; Android Auto Backup jest wyłączony (`allowBackup="false"`). 
+2. **SQLite przez Room na telefonie, backend tylko do kont i kopii.** Lokalna baza to nadal Room. Serwer `server/` (Rust, axum, SQLite) działa na domowym serwerze autorów za Tailscale Funnel. Przechowuje e-mail, hashe i szyfrogram kopii, a także buduje katalog leków (szczegóły: [server/README.md](../server/README.md)).
 3. **Dwa pliki bazy:**
    - `catalog.db`: katalog z RPL, tylko do odczytu, podmieniany w całości;
    - `user.db`: dane użytkownika.
@@ -28,13 +28,14 @@ Projekt bazy danych aplikacji (Kotlin, Android, SQLite).
 ## 1. Architektura
 
 **Komponenty:**
-- **Potok katalogu:** GitHub Actions (cron, np. raz w tygodniu) pobiera `overall.xml` z RPL i uruchamia skrypt importu. Opcjonalnie dociąga też CSV z komunikatami bezpieczeństwa oraz PDF-y ChPL i EMA dla `dosage_guideline`. Wynikiem są plik `catalog-RRRR-MM-DD.db.gz` i `manifest.json`, publikowane jako GitHub Release albo na dowolnym statycznym hostingu. Potok przetwarza wyłącznie publiczne dane z RPL, bez danych osobowych.
+- **Potok katalogu:** kontener `catalog` na serwerze mediTracker (codziennie o 05:17 UTC; wcześniej GitHub Actions) pobiera `overall.xml` z RPL i uruchamia `catalog/build.py`. Opcjonalnie dociąga też CSV z komunikatami bezpieczeństwa oraz PDF-y ChPL i EMA dla `dosage_guideline`. Wynikiem są pliki `leki.sqlite.gz` i `version.json`, które serwer udostępnia pod `/catalog/`. Potok przetwarza wyłącznie publiczne dane z RPL, bez danych osobowych.
 - **Telefon:**
   - `catalog.db`: początkowo kopiowany z assets APK, później podmieniany przez Worker;
   - `user.db`: Room, tryb WAL;
+  - konto (opcjonalne): plik `account.xml` z tokenem sesji i kluczem danych (DEK), zaszyfrowanymi kluczem z Android Keystore;
   - warstwa repozytoriów, z której korzystają UI, powiadomienia i skaner.
   
-  Do sieci aplikacja wychodzi tylko w dwóch sytuacjach: po aktualizację katalogu i do API JSON RPL dla kodów spoza katalogu.
+  Do sieci aplikacja wychodzi w trzech sytuacjach: do serwera mediTracker (konto, kopia zapasowa, aktualizacja katalogu) i do API JSON RPL dla kodów spoza katalogu. Skanowanie i przypomnienia działają bez sieci i bez konta.
 
 ### Katalog (`catalog.db`)
 
@@ -45,9 +46,9 @@ Projekt bazy danych aplikacji (Kotlin, Android, SQLite).
   - Zapisuje `catalog_meta.source_as_of = stanNaDzien`.
 - **Rozmiar (szacunek do zmierzenia).** Ok. 19 tys. produktów i 64 tys. opakowań to rząd 10–20 MB bez kompresji i kilka MB w APK. Jeśli to za dużo, URL-e ulotek i ChPL można wyliczać z `rpl_internal_id` zamiast je przechowywać (wzorzec w `rpl.md`).
 - **Dostarczenie.** `Room.databaseBuilder(...).createFromAsset("catalog.db")`.
-- **Aktualizacja.** `PeriodicWorkRequest` co 7 dni, tylko przez Wi-Fi i gdy bateria nie jest niska:
-  1. Pobierz `manifest.json` (`{version, schema_version, url, sha256, bytes}`). Jeśli wersja jest ta sama, zakończ.
-  2. Pobierz plik do katalogu tymczasowego. Sprawdź `sha256`, wynik `PRAGMA quick_check` i zgodność `schema_version`.
+- **Aktualizacja.** `PeriodicWorkRequest` raz dziennie, tylko przez Wi-Fi i gdy bateria nie jest niska:
+  1. Pobierz `version.json` (`{schema, stan_na_dzien, sha256, size}`, patrz [catalog.md](catalog.md)). Jeśli `stan_na_dzien` jest ten sam co lokalnie, zakończ.
+  2. Pobierz plik do katalogu tymczasowego. Sprawdź `sha256`, wynik `PRAGMA quick_check` i zgodność `schema`.
   3. Zamknij instancję Room katalogu, podmień plik atomowo (`rename`) i otwórz go ponownie.
   4. Wyczyść cache przez `ATTACH`: `DELETE FROM barcode_lookup_cache WHERE status = 'NOT_FOUND' OR gtin IN (SELECT gtin FROM cat.barcode)`. Nowy katalog ma pierwszeństwo przed cache.
 - **Licencja CC BY 4.0.** Każdy ekran z danymi RPL pokazuje: „Źródło: RPL, URPL / CeZ, stan na {source_as_of}”. Dla leku użytkownika data jest zapamiętana w `medication.rpl_source_as_of`.
@@ -64,15 +65,22 @@ Projekt bazy danych aplikacji (Kotlin, Android, SQLite).
 
 Dane o przyjmowanych lekach to dane o zdrowiu, czyli szczególna kategoria danych (art. 9 RODO).
 
-RODO nie zabrania trzymania ich w chmurze gdzie podstawą może być wyraźna zgodajednak wtedy autorzy aplikacji stają się administratorem takich danych, co pociąga za sobą dopowiedzialność za nie czego na ten oment lepiej uniknąć.
+RODO nie zabrania trzymania ich w chmurze, gdzie podstawą może być wyraźna zgoda, jednak wtedy autorzy aplikacji stają się administratorem takich danych, co pociąga za sobą odpowiedzialność za nie. Na ten moment lepiej tego uniknąć.
+
+Aplikacja nadal przetwarza dane lokalnie i działa w pełni bez konta i bez sieci. Konto jest opcjonalne. Kopia na serwerze powstaje tylko dla użytkownika, który się zarejestrował, i jest szyfrowana na telefonie:
+- klucz danych (DEK, losowe 256 bitów) szyfruje kopię algorytmem AES-256-GCM; nie opuszcza telefonu w postaci jawnej;
+- klucz hasła powstaje z hasła przez Argon2id, potem HKDF, i zawija DEK (slot 1);
+- kod odzyskiwania (losowy, pokazywany raz przy rejestracji) zawija ten sam DEK drugi raz (slot 2);
+- serwer dostaje tylko e-mail, hashe kluczy uwierzytelniania (`auth_key`, `recovery_auth`), oba zawinięte klucze i szyfrogram kopii. Nie zna hasła, kodu odzyskiwania ani DEK, więc nie może odczytać nazw leków, harmonogramów ani historii.
+
+Dzięki temu ryzyko RODO jest niskie. Wyciek bazy serwera nie ujawnia danych o lekach, a serwer nie przechowuje danych o zdrowiu w postaci jawnej. Serwer nadal przetwarza zwykłe dane osobowe (e-mail), dlatego nie zapisuje adresów IP, modeli telefonów ani analityki. Utrata hasła i kodu odzyskiwania oznacza utratę kopii; to świadoma decyzja.
+
+Katalog leków jest budowany z publicznych danych RPL, bez danych osobowych, więc jego przeniesienie na serwer nie zmienia tej oceny.
 
 
-### Kopia zapasowa: Android Auto Backup
+### Kopia zapasowa
 
-Kopia trafia na Dysk Google użytkownika. Od Androida 9, przy ustawionej blokadzie ekranu, jest szyfrowana po stronie klienta, więc ani my, ani Google nie mamy dostępu do treści. Limit to 25 MB na aplikację, dlatego:
-- `catalog.db` wykluczamy: zająłby limit, a aplikacja i tak go odtworzy (`createFromAsset` albo pobranie);
-- kopia obejmuje tylko `user.db` z plikiem WAL;
-- wyłączamy kopię na urządzeniach, które nie zapewniają szyfrowania.
+Android Auto Backup (kopia na Dysku Google) jest wyłączony (`android:allowBackup="false"`). Kopią zapasową jest wyłącznie szyfrowana kopia konta (opcjonalnego). Powód: Auto Backup przywracał po reinstalacji bazę i ustawienia niezależnie od konta, więc dane usunięte przy wylogowaniu mogły wrócić z Dysku Google. Użytkownik bez konta po reinstalacji zaczyna od zera.
 
 
 

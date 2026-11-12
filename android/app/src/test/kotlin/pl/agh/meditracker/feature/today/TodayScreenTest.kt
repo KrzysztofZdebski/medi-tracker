@@ -34,6 +34,7 @@ import java.time.LocalTime
 @Config(sdk = [35], qualifiers = "w412dp-h859dp-mdpi", application = TestApp::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class TodayScreenTest {
+    @get:org.junit.Rule val drainWrites = pl.agh.meditracker.data.user.DrainAppWritesRule()
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val repository = (RuntimeEnvironment.getApplication() as TestApp).container.medications
     private val today = LocalDate.now()

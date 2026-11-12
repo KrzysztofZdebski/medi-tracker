@@ -5,7 +5,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
+import pl.agh.meditracker.data.user.SyncedSettings
 
 enum class AppTheme(val label: String) { System("Systemowy"), Light("Jasny"), Dark("Ciemny") }
 
@@ -30,6 +32,18 @@ class SettingsStore(context: Context) {
         set(value) = prefs.edit().putBoolean("onboarding_done", value).apply()
 
     val remindersFlow: Flow<Boolean> = state.map { it.remindersEnabled }.distinctUntilChanged()
+
+    // ustawienia objęte kopią zapasową; tylko realne zmiany motywu lub drzemki
+    val syncedChanges: Flow<SyncedSettings> =
+        state.map { SyncedSettings(it.theme, it.snoozeMinutes) }.distinctUntilChanged().drop(1)
+
+    // bez ruszania przypomnień
+    fun applySynced(s: SyncedSettings) {
+        prefs.edit().putString("theme", s.theme.name).putInt("snooze_minutes", s.snoozeMinutes).apply()
+        _state.value = read()
+    }
+
+    fun resetSynced() = applySynced(SyncedSettings(AppTheme.System, 15))
 
     var remindersEnabled: Boolean
         get() = state.value.remindersEnabled
