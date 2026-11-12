@@ -1,6 +1,6 @@
 # Przegląd akcji aplikacji — 6 listopada 2026
 
-W aplikacji nie ma własnego serwera HTTP. Większość „endpointów” interfejsu to akcje Kotlin/Compose oraz trasy Navigation. Jedynymi pobieranymi zasobami są metadane i baza katalogu leków. Funkcje konta, logowania, hasła i wylogowania zostały pominięte zgodnie z zakresem.
+Aplikacja łączy się z serwerem mediTracker (`BuildConfig.SERVER_URL`): API konta i kopii zapasowej oraz pliki katalogu leków (`/catalog/version.json`, `/catalog/leki.sqlite.gz`). Endpointy i ich zachowanie opisuje [server/README.md](../server/README.md). Konto jest opcjonalne. Dostępne są: rejestracja z kodem wysłanym e-mailem, logowanie, kod odzyskiwania, zmiana hasła, reset hasła (kodem z e-maila i kodem odzyskiwania), usunięcie konta oraz wylogowanie, które usuwa dane z telefonu (kopia zostaje na koncie). Większość „endpointów” interfejsu to nadal akcje Kotlin/Compose oraz trasy Navigation.
 
 ## Naprawione braki
 
