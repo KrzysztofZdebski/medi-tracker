@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import pl.agh.meditracker.data.account.api.ApiError
 import pl.agh.meditracker.data.account.api.ApiResult
@@ -41,6 +42,10 @@ class DeleteAccountViewModel(private val delete: suspend (CharArray) -> ApiResul
                     is ApiResult.Ok -> onDone()
                     is ApiResult.Err -> error = result.error
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = ApiError.Server
             } finally {
                 busy = false
             }

@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -31,7 +32,9 @@ import pl.agh.meditracker.data.account.api.ApiResult
 import pl.agh.meditracker.data.account.crypto.EncryptedBlob
 import pl.agh.meditracker.data.account.crypto.KdfParams
 import pl.agh.meditracker.feature.account.AuthViewModel
+import pl.agh.meditracker.feature.account.AuthError
 import pl.agh.meditracker.feature.account.RestoreChoiceHost
+import pl.agh.meditracker.feature.account.RestoreChoiceViewModel
 import pl.agh.meditracker.model.DoseUnit
 import pl.agh.meditracker.model.Medication
 import pl.agh.meditracker.model.Schedule
@@ -158,6 +161,53 @@ class AccountFlowsTest {
         assertNotNull(app.container.backup.pendingChoice.value)
         assertFalse("takeover" in app.api.calls)
         assertFalse("putBackup" in app.api.calls)
+    }
+
+    @Test fun reopenRetriesDecisionWhenNoPendingChoice() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val other = AccountRepository(app.api, AccountStore(context.getSharedPreferences("other", Context.MODE_PRIVATE), app.box), kdf = FAST, kdfBounds = BOUNDS)
+        runBlocking {
+            account.registered(ANNA)
+            app.container.medications.add(
+                Medication(
+                    name = "Metformina", strength = "500 mg", form = "tabletki", unit = DoseUnit.Tablet,
+                    schedule = Schedule(1, DayOfWeek.entries.toSet(), listOf(LocalTime.of(8, 0)), LocalDate.now()),
+                    stock = 30, refillThreshold = 5,
+                ),
+            )
+            other.registered(OLA)
+            account.onUnauthorized(account.session()!!.token)
+            account.login(OLA, pw())
+            // decyzja nie dochodzi do skutku (brak sieci): decisionPending bez pendingChoice
+            app.api.offline = true
+            assertTrue(app.container.backup.afterLogin() is AfterLogin.Failed)
+            app.api.offline = false
+        }
+        assertTrue(account.decisionPending)
+        assertEquals(null, app.container.backup.pendingChoice.value)
+        val vm = RestoreChoiceViewModel(app.container.backup)
+
+        vm.reopen()
+        repeat(500) {
+            shadowOf(Looper.getMainLooper()).idle()
+            if (app.container.backup.pendingChoice.value != null) return@repeat
+            Thread.sleep(20)
+        }
+        assertNotNull("reopen ponowił decyzję", app.container.backup.pendingChoice.value)
+        compose.setContent { MediTrackerTheme { RestoreChoiceHost() } }
+        compose.onNodeWithText("Zacznij z pustym kontem").assertIsDisplayed()
+    }
+
+    @Test fun throwingOperationDoesNotCrashAndShowsServerError() {
+        runBlocking {
+            account.registered(ANNA)
+            account.onUnauthorized(account.session()!!.token)
+        }
+        val vm = AuthViewModel(account) { throw RuntimeException("seal") }
+        vm.login(ANNA, pw()) {}
+        settle(vm)
+        assertFalse(vm.busy)
+        assertEquals(AuthError.Server, vm.error)
     }
 
     @Test fun logoutFromSettingsWipesPhoneAndShowsLoggedOutRow() {

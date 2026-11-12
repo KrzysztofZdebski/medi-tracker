@@ -172,7 +172,8 @@ class MedicationRepository(
         val qty = schedule.doseQty
         if (previous?.status == DoseStatus.Taken) changeStock(medicationId, oldEntry?.medication?.schedule?.doseQty ?: qty)
         if (status == DoseStatus.Taken) changeStock(medicationId, -qty)
-        val updated = medications.value.first { it.id == medicationId }
+        // przeładowanie po przywróceniu/wyczyszczeniu mogło usunąć lek od czasu poprzedniego odczytu
+        val updated = medications.value.firstOrNull { it.id == medicationId } ?: return
         val entry = if (status == DoseStatus.Taken || status == DoseStatus.Skipped) {
             HistoryEntry(med.copy(schedule = schedule), date, time, status, LocalDateTime.now(clock), updated.stock)
         } else null

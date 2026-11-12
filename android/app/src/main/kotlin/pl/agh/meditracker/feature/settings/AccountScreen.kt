@@ -68,13 +68,14 @@ fun AccountScreen(
         else -> ""
     }
     AccountContent(
-        email, status, decisionPending = pendingChoice != null,
+        email, status, decisionPending = pendingChoice != null || container.account.decisionPending,
         onBack = onBack, onChangePassword = onChangePassword,
         onLogout = { logout.reset(); sheet = "logout" },
         onDelete = { delete.reset(); sheet = "delete" },
         onRetryUpload = { conflict.retryUpload() },
         onOpenConflict = conflict::open,
         onChooseData = restoreChoice::reopen,
+        chooseError = restoreChoice.error != null,
     )
     when (sheet) {
         "logout" -> LogoutSheet(logout, onDone = { sheet = null; onSignedOut() }, onDismiss = { sheet = null }, onChooseData = { sheet = null; restoreChoice.reopen() })
@@ -96,6 +97,7 @@ fun AccountContent(
     onOpenConflict: () -> Unit,
     onChooseData: () -> Unit,
     zone: ZoneId = ZoneId.systemDefault(),
+    chooseError: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     AuthLayout("Moje konto", "Twoje konto", "Dane logowania do mediTracker.", onBack) {
@@ -116,6 +118,7 @@ fun AccountContent(
         if (decisionPending) {
             AppAlert("Dane czekają na Twoją decyzję", "Kopia nie jest wysyłana, dopóki nie wybierzesz, które dane zachować.", AlertTone.Warning)
             SecondaryButton("Wybierz, które dane zachować", onChooseData)
+            if (chooseError) AppAlert("Nie udało się", "Sprawdź połączenie z internetem i spróbuj ponownie.", AlertTone.Error)
         }
         SecondaryButton("Zmień hasło", onChangePassword)
         DestructiveButton("Wyloguj się", onLogout)

@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -52,9 +53,33 @@ class RestoreChoiceViewModel(private val backup: BackupSync) : ViewModel() {
         if (!busy) postponed = true
     }
 
-    /** Pokazuje odłożone pytanie jeszcze raz (wiersz "Wybierz, które dane zachować" w ustawieniach). */
+    /** Nowe pytanie (kolejne logowanie) nie dziedziczy odłożenia po poprzednim. */
+    fun clearPostponed() {
+        postponed = false
+    }
+
+    /**
+     * Pokazuje odłożone pytanie jeszcze raz (wiersz "Wybierz, które dane zachować" w ustawieniach). Gdy decyzja
+     * wcześniej się nie udała (brak sieci, nieczytelna kopia), nie ma czego pokazać, więc ponawia ją; pytanie pojawia
+     * się wtedy przez pendingChoice, a błąd trafia do [error].
+     */
     fun reopen() {
         postponed = false
+        if (backup.pendingChoice.value != null || busy) return
+        busy = true
+        error = null
+        viewModelScope.launch {
+            try {
+                val result = backup.afterLogin()
+                if (result is AfterLogin.Failed) error = result.error
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = ApiError.Server
+            } finally {
+                busy = false
+            }
+        }
     }
     var busy by mutableStateOf(false)
         private set
@@ -70,6 +95,10 @@ class RestoreChoiceViewModel(private val backup: BackupSync) : ViewModel() {
             try {
                 val result = backup.resolve(restore)
                 if (result is ApiResult.Err) error = result.error
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = ApiError.Server
             } finally {
                 busy = false
             }
@@ -86,7 +115,7 @@ fun RestoreChoiceHost() {
     val viewModel = appViewModel { RestoreChoiceViewModel(it.backup) }
     val choice by viewModel.choice.collectAsState()
     // nowe pytanie (kolejne logowanie) nie dziedziczy odłożenia po poprzednim
-    LaunchedEffect(choice == null) { if (choice == null) viewModel.reopen() }
+    LaunchedEffect(choice == null) { if (choice == null) viewModel.clearPostponed() }
     val current = choice
     if (current != null && !viewModel.postponed) {
         RestoreChoiceSheet(current, viewModel.busy, viewModel.error, viewModel::postpone, viewModel::choose)

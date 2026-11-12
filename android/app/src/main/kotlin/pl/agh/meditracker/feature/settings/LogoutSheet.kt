@@ -10,6 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import pl.agh.meditracker.data.account.LogoutResult
 import pl.agh.meditracker.ui.components.AlertTone
@@ -46,6 +47,10 @@ class LogoutViewModel(
             try {
                 if (logout(force) == LogoutResult.Done) onDone()
                 else phase = if (decisionPending()) Phase.DecisionPending else Phase.Unsynced
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                phase = if (decisionPending()) Phase.DecisionPending else Phase.Unsynced
             } finally {
                 busy = false
             }
