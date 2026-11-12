@@ -22,6 +22,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Remove
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,13 +32,17 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.time.DayOfWeek
@@ -56,7 +62,9 @@ fun AppTextField(
     placeholder: String? = null,
     trailingIcon: ImageVector? = null,
     tall: Boolean = false,
+    password: Boolean = false,
 ) {
+    var revealed by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val colors = MaterialTheme.colorScheme
@@ -83,7 +91,8 @@ fun AppTextField(
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                     color = if (enabled) colors.onSurface else colors.onSurfaceVariant,
                 ),
-                keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+                keyboardOptions = KeyboardOptions(keyboardType = if (password) KeyboardType.Password else keyboardType),
+                visualTransformation = if (password && !revealed) PasswordVisualTransformation() else VisualTransformation.None,
                 singleLine = true,
                 interactionSource = interaction,
                 cursorBrush = SolidColor(colors.primary),
@@ -108,7 +117,15 @@ fun AppTextField(
                                 inner()
                             }
                         }
-                        if (trailingIcon != null) {
+                        if (password) {
+                            IconButton(onClick = { revealed = !revealed }, enabled = enabled) {
+                                Icon(
+                                    if (revealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                    contentDescription = if (revealed) "Ukryj hasło" else "Pokaż hasło",
+                                    tint = colors.onSurfaceVariant,
+                                )
+                            }
+                        } else if (trailingIcon != null) {
                             Icon(trailingIcon, contentDescription = null, tint = colors.onSurfaceVariant)
                         }
                     }

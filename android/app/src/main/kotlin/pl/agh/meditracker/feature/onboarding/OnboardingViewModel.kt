@@ -8,8 +8,11 @@ import pl.agh.meditracker.data.settings.SettingsStore
 
 enum class OnboardingStep { Welcome, Reminders }
 
-class OnboardingViewModel(private val settings: SettingsStore) : ViewModel() {
-    var step by mutableStateOf(OnboardingStep.Welcome)
+class OnboardingViewModel(
+    private val settings: SettingsStore,
+    initialStep: OnboardingStep = OnboardingStep.Welcome,
+) : ViewModel() {
+    var step by mutableStateOf(initialStep)
         private set
 
     fun goTo(target: OnboardingStep) {

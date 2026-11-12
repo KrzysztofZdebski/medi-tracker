@@ -55,6 +55,9 @@ class FakeAccountApi : AccountApi {
     /** Wszystkie wywołania kończą się błędem sieci. */
     var offline = false
 
+    /** `logout` rzuca wyjątek spoza IO (np. błąd w kliencie HTTP). */
+    var logoutThrows = false
+
     /** Udaje przejęty serwer, który w prelogin podaje własne parametry KDF. */
     var preloginKdfOverride: KdfParams? = null
 
@@ -153,6 +156,7 @@ class FakeAccountApi : AccountApi {
     }
 
     override suspend fun logout(token: String) = serve("logout") {
+        if (logoutThrows) throw IllegalStateException("boom")
         sessions.remove(token)
         ApiResult.Ok(Unit)
     }

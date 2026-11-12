@@ -5,6 +5,8 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -63,7 +65,10 @@ open class MediTrackerApp : Application() {
 }
 
 @Composable
-inline fun <reified VM : ViewModel> appViewModel(crossinline create: (AppContainer) -> VM): VM {
+inline fun <reified VM : ViewModel> appViewModel(
+    owner: ViewModelStoreOwner = checkNotNull(LocalViewModelStoreOwner.current),
+    crossinline create: (AppContainer) -> VM,
+): VM {
     val container = (LocalContext.current.applicationContext as MediTrackerApp).container
-    return viewModel { create(container) }
+    return viewModel(owner) { create(container) }
 }

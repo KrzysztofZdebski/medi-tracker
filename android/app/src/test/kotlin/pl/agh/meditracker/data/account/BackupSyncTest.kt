@@ -581,8 +581,8 @@ class BackupSyncTest {
         // sesja Anny wygasła, na tym telefonie loguje się Ola
         account.onUnauthorized(accountStore.token!!)
         assertTrue(account.login(OLA, pw()) is ApiResult.Ok)
-        assertEquals(AfterLogin.NeedsChoice(fromOtherAccount = true), sync.afterLogin())
-        assertEquals(AfterLogin.NeedsChoice(fromOtherAccount = true), sync.pendingChoice.value)
+        assertEquals(AfterLogin.NeedsChoice(fromOtherAccount = true, accountHasBackup = true), sync.afterLogin())
+        assertEquals(AfterLogin.NeedsChoice(fromOtherAccount = true, accountHasBackup = true), sync.pendingChoice.value)
 
         advanceTimeBy(30 * 60_000L); runCurrent()
         assertEquals(before, puts())
@@ -907,17 +907,17 @@ class BackupSyncTest {
         val sync = otherAccountDataOnEmptyAccount()
         val before = puts()
 
-        assertEquals(AfterLogin.NeedsChoice(fromOtherAccount = true), sync.afterLogin())
-        assertEquals(AfterLogin.NeedsChoice(fromOtherAccount = true), sync.pendingChoice.value)
+        assertEquals(AfterLogin.NeedsChoice(fromOtherAccount = true, accountHasBackup = false), sync.afterLogin())
+        assertEquals(AfterLogin.NeedsChoice(fromOtherAccount = true, accountHasBackup = false), sync.pendingChoice.value)
         advanceTimeBy(30 * 60_000L); runCurrent()
         assertEquals(before, puts())
         assertNull(api.account(OLA).blob)
 
-        // „Przywróć dane z konta” = zacznij od pustego telefonu, bez GET
+        // „Przywróć dane z konta” = zacznij od pustego telefonu (jeden GET tylko sprawdza, czy kopia nie powstała)
         api.calls.clear()
         assertEquals(ApiResult.Ok(Unit), sync.resolve(restore = true))
         runCurrent()
-        assertFalse("getBackup" in api.calls)
+        assertEquals(1, api.calls.count { it == "getBackup" })
         assertEquals(emptySet<String>(), localMeds())
         assertEquals(emptySet<String>(), storedMeds())
         assertEquals(api.account(OLA).userId, accountStore.dataOwnerUserId)
@@ -930,10 +930,52 @@ class BackupSyncTest {
     @Test
     fun otherAccountDataKeptOnRequestIsUploaded() = test {
         val sync = otherAccountDataOnEmptyAccount()
-        assertEquals(AfterLogin.NeedsChoice(fromOtherAccount = true), sync.afterLogin())
+        assertEquals(AfterLogin.NeedsChoice(fromOtherAccount = true, accountHasBackup = false), sync.afterLogin())
 
         assertEquals(ApiResult.Ok(Unit), sync.resolve(restore = false))
         assertEquals(setOf("Metformina"), serverMeds(OLA))
         assertFalse(account.decisionPending)
+    }
+
+    @Test
+    fun otherAccountChoiceFallsBackToRestoreWhenBackupAppearedMeanwhile() = test {
+        val sync = otherAccountDataOnEmptyAccount()
+        assertEquals(AfterLogin.NeedsChoice(fromOtherAccount = true, accountHasBackup = false), sync.afterLogin())
+
+        // zanim użytkownik wybierze, inny telefon Oli wysyła kopię
+        other.login(OLA, pw())
+        otherPhoneUploads("Ibuprom")
+
+        assertEquals(ApiResult.Ok(Unit), sync.resolve(restore = true))
+        runCurrent()
+        assertEquals(setOf("Ibuprom"), localMeds())
+        assertEquals(setOf("Ibuprom"), serverMeds(OLA))
+        assertFalse(account.decisionPending)
+    }
+
+    @Test
+    fun emptyPhoneOfOtherAccountJustConfirmsOwnerOnEmptyAccount() = test {
+        account.registered()
+        val sync = sync()
+        runCurrent()
+        other.registered(OLA)
+        account.onUnauthorized(accountStore.token!!)
+        account.login(OLA, pw())
+
+        assertEquals(AfterLogin.Uploaded, sync.afterLogin())
+        assertNull(sync.pendingChoice.value)
+        assertFalse(account.decisionPending)
+    }
+
+    @Test
+    fun logoutFinishesEvenWhenApiLogoutThrows() = test {
+        account.registered()
+        val sync = sync()
+        runCurrent()
+        api.logoutThrows = true
+
+        assertEquals(LogoutResult.Done, sync.logout(force = true))
+        assertEquals(AccountState.LoggedOut, account.state.value)
+        assertNull(accountStore.token)
     }
 }

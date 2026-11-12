@@ -22,7 +22,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import pl.agh.meditracker.ui.components.AppTextButton
 import pl.agh.meditracker.ui.components.PrimaryButton
+import pl.agh.meditracker.ui.components.SecondaryButton
 
 private val features = listOf(
     Icons.Outlined.QrCodeScanner to "Dodaj lek jednym skanem",
@@ -31,7 +33,7 @@ private val features = listOf(
 )
 
 @Composable
-fun WelcomeContent(onStart: () -> Unit) {
+fun WelcomeContent(onCreateAccount: () -> Unit, onLogin: () -> Unit, onSkip: () -> Unit) {
     OnboardingLayout(
         title = "mediTracker",
         icon = Icons.Outlined.Medication,
@@ -54,6 +56,8 @@ fun WelcomeContent(onStart: () -> Unit) {
                 }
             }
         }
-        PrimaryButton("Zaczynamy", onClick = onStart)
+        PrimaryButton("Utwórz konto", onClick = onCreateAccount)
+        SecondaryButton("Zaloguj się", onClick = onLogin)
+        AppTextButton("Kontynuuj bez konta", onClick = onSkip, modifier = Modifier.align(Alignment.CenterHorizontally))
     }
 }

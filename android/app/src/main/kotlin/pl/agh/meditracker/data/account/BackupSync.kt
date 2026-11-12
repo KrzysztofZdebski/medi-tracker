@@ -54,9 +54,9 @@ sealed interface AfterLogin {
 
     /**
      * Użytkownik wybiera [BackupSync.resolve]: obie strony mają dane albo dane innego konta trafiają na konto bez
-     * kopii (R21; wtedy „przywróć” oznacza pusty telefon).
+     * kopii (R21; wtedy [accountHasBackup] jest false, a „przywróć” oznacza pusty telefon).
      */
-    data class NeedsChoice(val fromOtherAccount: Boolean) : AfterLogin
+    data class NeedsChoice(val fromOtherAccount: Boolean, val accountHasBackup: Boolean = true) : AfterLogin
 
     /** Nic nie zmieniono; decyzja wciąż czeka (przy błędzie sieci ponowimy ją w tle). */
     data class Failed(val error: ApiError) : AfterLogin
@@ -168,8 +168,16 @@ class BackupSync(
                 is ApiResult.Ok -> r.value
             }
             cancelTimers()
+            // R21: dane innego konta, konto bez kopii; „przywróć” = pusty telefon. Ale między pytaniem a wyborem ktoś
+            // mógł wysłać kopię (inny telefon), a wtedy zwykłe przywrócenie, nie kasowanie.
+            var backup: RemoteBackup? = null
             if (restore && choiceForEmptyAccount) {
-                // R21: dane innego konta, konto bez kopii; „przywróć” = pusty telefon (nie ma czego pobierać)
+                backup = when (val r = api.getBackup(s.token)) {
+                    is ApiResult.Err -> return@withLock failure(s, r)
+                    is ApiResult.Ok -> r.value
+                }
+            }
+            if (restore && choiceForEmptyAccount && backup?.blob == null) {
                 accountStore.epoch = epoch
                 accountStore.backupVersion = version
                 val seq = synchronized(lock) { changeSeq }
@@ -183,11 +191,11 @@ class BackupSync(
                 // Nowy epoch zapisujemy dopiero razem z przywróconymi danymi. Do tego czasu telefon ma stary epoch,
                 // więc każdy PUT jego (porzucanych) danych dostanie 409: po błędzie pobrania, po wylogowaniu bez
                 // wymuszenia i po śmierci procesu w trakcie.
-                val backup = when (val r = api.getBackup(s.token)) {
+                val fetched = backup ?: when (val r = api.getBackup(s.token)) {
                     is ApiResult.Err -> return@withLock failure(s, r)
                     is ApiResult.Ok -> r.value
                 }
-                if (!restoreLocked(s, backup, epoch)) return@withLock ApiResult.Err(ApiError.UnreadableBackup)
+                if (!restoreLocked(s, fetched, epoch)) return@withLock ApiResult.Err(ApiError.UnreadableBackup)
                 account.confirmDataOwner()
                 settled()
                 ApiResult.Ok(Unit)
@@ -224,7 +232,8 @@ class BackupSync(
         wipeLocal()
         account.session()?.let { s ->
             s.dek.fill(0)
-            api.logout(s.token) // błąd (np. brak sieci) nie zatrzymuje wylogowania; sesja i tak wygaśnie
+            // błąd (sieć, ale i nieoczekiwany wyjątek) nie zatrzymuje wylogowania; sesja i tak wygaśnie
+            runCatching { api.logout(s.token) }
         }
         account.logoutLocally()
         cancelTimers()
@@ -294,9 +303,10 @@ class BackupSync(
                 is ApiResult.Ok -> r.value
             }
             if (backup.blob == null) {
-                // R21: cudzych danych nie kopiujemy po cichu na nowe konto; użytkownik wybiera
-                if (fromOtherAccount) {
-                    return raiseChoice(AfterLogin.NeedsChoice(fromOtherAccount = true), emptyAccount = true)
+                // R21: cudzych danych nie kopiujemy po cichu na nowe konto; użytkownik wybiera (o ile telefon
+                // w ogóle ma dane, inaczej nie ma o co pytać)
+                if (fromOtherAccount && !phoneIsEmpty()) {
+                    return raiseChoice(AfterLogin.NeedsChoice(fromOtherAccount = true, accountHasBackup = false), emptyAccount = true)
                 }
                 // konto bez kopii (nowe albo po resecie bez kodu, R7): dane z telefonu stają się kopią, także puste
                 accountStore.backupVersion = backup.version
@@ -312,8 +322,7 @@ class BackupSync(
                 uploadLocked()
                 return AfterLogin.Uploaded
             }
-            val local = repository.dumpSnapshot(currentSynced())
-            if (local.medications.isEmpty() && local.history.isEmpty()) {
+            if (phoneIsEmpty()) {
                 if (!restoreLocked(s, backup)) return AfterLogin.Failed(ApiError.UnreadableBackup)
                 account.confirmDataOwner()
                 clearChoice()
@@ -323,6 +332,12 @@ class BackupSync(
         } finally {
             s.dek.fill(0)
         }
+    }
+
+    // leki (także zarchiwizowane) i historia; same ustawienia nie są danymi do ochrony
+    private suspend fun phoneIsEmpty(): Boolean {
+        val local = repository.dumpSnapshot(currentSynced())
+        return local.medications.isEmpty() && local.history.isEmpty()
     }
 
     // Odszyfrowanie i odczyt przed jakąkolwiek zmianą; każdy błąd (zły klucz lub AAD, uszkodzony blob, nieznany
