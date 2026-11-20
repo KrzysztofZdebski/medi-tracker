@@ -27,6 +27,7 @@ import pl.agh.meditracker.model.Medication
 import pl.agh.meditracker.model.HistoryEntry
 import pl.agh.meditracker.model.Schedule
 import java.time.LocalDateTime
+import pl.agh.meditracker.core.SystemZoneClock
 import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalTime
@@ -36,7 +37,7 @@ import java.util.UUID
 // Bez store (testy) repozytorium działa tylko w pamięci. [writeDispatcher] musi wykonywać jedno zadanie naraz
 // (testy podają dyspozytor z wirtualnym czasem).
 class MedicationRepository(
-    private val clock: Clock = Clock.systemDefaultZone(),
+    private val clock: Clock = SystemZoneClock,
     private val store: MedicationStore? = null,
     initial: StoredState = StoredState(),
     writeDispatcher: CoroutineDispatcher = serialIo(),

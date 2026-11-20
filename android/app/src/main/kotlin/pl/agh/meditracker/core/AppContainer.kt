@@ -30,7 +30,7 @@ import pl.agh.meditracker.data.settings.SettingsStore
 import pl.agh.meditracker.data.user.RoomMedicationStore
 import pl.agh.meditracker.data.user.UserDatabase
 import pl.agh.meditracker.reminder.ReminderScheduler
-import java.time.Clock
+import pl.agh.meditracker.widget.TodayWidgetUpdater
 
 // accountApi, secretBox i parametry KDF podmieniają tylko testy (serwer w pamięci, Argon2 w miniaturze)
 class AppContainer(
@@ -48,6 +48,7 @@ class AppContainer(
     val catalog = CatalogRepository(context.filesDir)
     val settings = SettingsStore(context)
     val reminders = ReminderScheduler(context, medications, settings)
+    val widgets = TodayWidgetUpdater(context, medications)
 
     // konstrukcja bez sieci; Keystore dopiero przy pierwszym odczycie lub zapisie sekretu
     private val accountStore = AccountStore(context.getSharedPreferences("account", Context.MODE_PRIVATE), secretBox)
@@ -56,7 +57,7 @@ class AppContainer(
     // kopia zapasowa rusza dopiero w start() (MediTrackerApp.onCreate), więc sama konstrukcja nie sięga do sieci
     val backup = BackupSync(
         medications, settings, account, accountStore, accountApi,
-        CoroutineScope(SupervisorJob() + Dispatchers.IO), Clock.systemDefaultZone(),
+        CoroutineScope(SupervisorJob() + Dispatchers.IO), SystemZoneClock,
     )
 }
 
@@ -69,6 +70,7 @@ open class MediTrackerApp : Application() {
         container = AppContainer(this)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         container.reminders.start(scope)
+        container.widgets.start(scope)
         container.backup.start()
         scope.launch { runCatching { container.catalog.sync() } }
     }

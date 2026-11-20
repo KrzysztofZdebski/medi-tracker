@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_today_label">Dzisiejsze dawki</string>
+    <string name="widget_today_description">Najbliższa dawka i przycisk „Przyjęte”</string>
+    <string name="widget_today_title">Dziś</string>
+    <string name="widget_take">Przyjęte</string>
+    <!-- podgląd na liście widżetów -->
+    <string name="widget_preview_progress">1 z 3 przyjęte</string>
+    <string name="widget_preview_time">20:00</string>
+    <string name="widget_preview_name">Metformina</string>
+    <string name="widget_preview_detail">500 mg · 1 tabletka</string>
+</resources>

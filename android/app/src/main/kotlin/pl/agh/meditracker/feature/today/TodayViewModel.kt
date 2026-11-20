@@ -19,6 +19,7 @@ import pl.agh.meditracker.data.repository.MedicationRepository
 import pl.agh.meditracker.model.Dose
 import pl.agh.meditracker.model.DoseStatus
 import pl.agh.meditracker.model.Medication
+import pl.agh.meditracker.core.SystemZoneClock
 import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -55,7 +56,7 @@ private data class Overlay(val feedback: TodayFeedback? = null, val sheet: Today
 @OptIn(ExperimentalCoroutinesApi::class)
 class TodayViewModel(
     private val repository: MedicationRepository,
-    private val clock: Clock = Clock.systemDefaultZone(),
+    private val clock: Clock = SystemZoneClock,
 ) : ViewModel() {
     private val overlay = MutableStateFlow(Overlay())
 

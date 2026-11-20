@@ -10,6 +10,7 @@ import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -19,6 +20,7 @@ import kotlinx.coroutines.launch
 import pl.agh.meditracker.data.repository.MedicationRepository
 import pl.agh.meditracker.data.settings.SettingsStore
 import pl.agh.meditracker.model.DoseStatus
+import pl.agh.meditracker.core.SystemZoneClock
 import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -30,7 +32,7 @@ class ReminderScheduler(
     private val context: Context,
     private val repository: MedicationRepository,
     private val settings: SettingsStore,
-    private val clock: Clock = Clock.systemDefaultZone(),
+    private val clock: Clock = SystemZoneClock,
 ) {
     private val alarms = context.getSystemService(AlarmManager::class.java)
     private val refreshes = MutableStateFlow(0)
@@ -39,13 +41,7 @@ class ReminderScheduler(
         get() = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarms.canScheduleExactAlarms()
 
     fun start(scope: CoroutineScope) = scope.launch {
-        val today = flow {
-            while (true) {
-                emit(LocalDate.now(clock))
-                delay(60_000)
-            }
-        }.distinctUntilChanged()
-        val doses = today.flatMapLatest { day ->
+        val doses = currentDay(clock).flatMapLatest { day ->
             combine(repository.dosesFor(day), repository.dosesFor(day.plusDays(1))) { a, b -> a + b }
         }
         combine(settings.remindersFlow, doses, repository.medications, refreshes) { enabled, doses, meds, _ -> Triple(enabled, doses, meds) }
@@ -88,3 +84,11 @@ class ReminderScheduler(
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 }
+
+// bieżąca data, z nową wartością zaraz po północy (sprawdzana co minutę)
+fun currentDay(clock: Clock): Flow<LocalDate> = flow {
+    while (true) {
+        emit(LocalDate.now(clock))
+        delay(60_000)
+    }
+}.distinctUntilChanged()
