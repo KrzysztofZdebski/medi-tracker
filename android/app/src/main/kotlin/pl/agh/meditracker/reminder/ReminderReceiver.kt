@@ -40,12 +40,14 @@ class ReminderReceiver : BroadcastReceiver() {
                 if (dose == null || dose.medication.stock < dose.medication.schedule.doseQty) return
                 container.medications.setDoseStatus(medicationId, date, time, DoseStatus.Taken)
                 NotificationManagerCompat.from(context).cancel(code)
+                container.widgets.update()
                 finishAfterWrites(container)
             }
             ACTION_SNOOZE -> {
                 if (dose != null) {
                     val until = LocalTime.now().plusMinutes(container.settings.snoozeMinutes.toLong())
                     container.medications.setDoseStatus(medicationId, date, time, DoseStatus.Snoozed, until)
+                    container.widgets.update()
                 }
                 NotificationManagerCompat.from(context).cancel(code)
                 finishAfterWrites(container)
@@ -85,18 +87,11 @@ class ReminderReceiver : BroadcastReceiver() {
             .setAutoCancel(true)
             .addExtras(Bundle().apply { putString(EXTRA_MEDICATION_ID, med.id) })
             .setContentIntent(PendingIntent.getActivity(context, code, open, PendingIntent.FLAG_IMMUTABLE))
-        if (med.stock >= med.schedule.doseQty) builder.addAction(0, "Przyjęte", action(context, ACTION_TAKE, reminder))
+        if (med.stock >= med.schedule.doseQty) builder.addAction(0, "Przyjęte", pendingAction(context, ACTION_TAKE, reminder))
         else builder.setSubText("Brak zapasu")
-        builder.addAction(0, "Odłóż ${(context.applicationContext as MediTrackerApp).container.settings.snoozeMinutes} min", action(context, ACTION_SNOOZE, reminder))
+        builder.addAction(0, "Odłóż ${(context.applicationContext as MediTrackerApp).container.settings.snoozeMinutes} min", pendingAction(context, ACTION_SNOOZE, reminder))
         NotificationManagerCompat.from(context).notify(code, builder.build())
     }
-
-    private fun action(context: Context, action: String, reminder: Reminder) = PendingIntent.getBroadcast(
-        context,
-        reminder.code,
-        Intent(context, ReminderReceiver::class.java).setAction(action).putExtras(remind(reminder)),
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
 
     companion object {
         const val ACTION_REMIND = "pl.agh.meditracker.REMIND"
@@ -112,6 +107,14 @@ class ReminderReceiver : BroadcastReceiver() {
             .putExtra(EXTRA_MEDICATION, reminder.medicationId)
             .putExtra(EXTRA_DATE, reminder.date.toString())
             .putExtra(EXTRA_TIME, reminder.time.toString())
+
+        // „Przyjęte” i „Odłóż” dla dawki; używa ich też widżet
+        fun pendingAction(context: Context, action: String, reminder: Reminder): PendingIntent = PendingIntent.getBroadcast(
+            context,
+            reminder.code,
+            Intent(context, ReminderReceiver::class.java).setAction(action).putExtras(remind(reminder)),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 }
 
@@ -126,6 +129,10 @@ class RescheduleReceiver : BroadcastReceiver() {
     )
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action in actions) (context.applicationContext as MediTrackerApp).container.reminders.refresh()
+        if (intent.action !in actions) return
+        val container = (context.applicationContext as MediTrackerApp).container
+        container.reminders.refresh()
+        // po zmianie czasu lub strefy mógł się zmienić dzień pokazywany w widżecie
+        container.widgets.update()
     }
 }

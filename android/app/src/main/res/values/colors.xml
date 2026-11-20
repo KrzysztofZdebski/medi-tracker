@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#176B5B</color>
+    <!-- widżet: kolory jak w ui/theme (jasny); ciemne w values-night -->
+    <color name="widget_surface">#F7FAF8</color>
+    <color name="widget_primary">#176B5B</color>
+    <color name="widget_on_primary">#FFFFFF</color>
+    <color name="widget_text">#1A2722</color>
+    <color name="widget_muted">#4A5C53</color>
 </resources>
