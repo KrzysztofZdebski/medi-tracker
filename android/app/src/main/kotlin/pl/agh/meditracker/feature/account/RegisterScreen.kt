@@ -21,6 +21,8 @@ import pl.agh.meditracker.ui.components.AppAlert
 import pl.agh.meditracker.ui.components.AppTextButton
 import pl.agh.meditracker.ui.components.AppTextField
 import pl.agh.meditracker.ui.components.PrimaryButton
+import pl.agh.meditracker.ui.theme.MotionPresence
+import pl.agh.meditracker.ui.theme.MotionVisibility
 
 @Composable
 fun RegisterScreen(viewModel: AuthViewModel, onBack: () -> Unit, onRegistered: () -> Unit, onLogin: () -> Unit) {
@@ -53,11 +55,10 @@ fun RegisterContent(
     val hasErrors = emailError != null || passwordError != null || repeatError != null
 
     AuthLayout("Utwórz konto", "Zacznij od swojego konta", "Podaj e-mail i ustaw hasło do mediTracker.", onBack) {
-        if (hasErrors) {
+        MotionVisibility(hasErrors) {
             AppAlert("Popraw zaznaczone pola", "Sprawdź adres e-mail i oba pola hasła.", AlertTone.Error)
-        } else if (error != null) {
-            AuthErrorAlert(error)
         }
+        MotionPresence(error.takeUnless { hasErrors }) { AuthErrorAlert(it) }
         AppTextField(email, { email = it }, "Adres e-mail", error = emailError, enabled = !busy, keyboardType = KeyboardType.Email)
         AppTextField(password, { password = it }, "Hasło", error = passwordError, enabled = !busy, password = true)
         AppTextField(repeat, { repeat = it }, "Powtórz hasło", error = repeatError, enabled = !busy, password = true)

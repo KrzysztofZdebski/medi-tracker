@@ -4,7 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -18,8 +18,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 
+// Przyciski mają minimalną, a nie stałą wysokość, żeby przy powiększonej czcionce (200%) tekst nie był ucinany.
 @Composable
 fun PrimaryButton(
     text: String,
@@ -31,7 +34,8 @@ fun PrimaryButton(
 ) {
     Button(
         onClick = { if (!loading) onClick() },
-        modifier = modifier.fillMaxWidth().height(56.dp),
+        // podczas ładowania czytnik ekranu dostaje stan, bo sam wskaźnik postępu nie jest scalany z przyciskiem
+        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp).semantics { if (loading) stateDescription = "Trwa ładowanie" },
         enabled = enabled,
         shape = MaterialTheme.shapes.extraLarge,
         colors = ButtonDefaults.buttonColors(
@@ -64,7 +68,7 @@ fun SecondaryButton(
 ) {
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().height(56.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp),
         enabled = enabled,
         shape = MaterialTheme.shapes.extraLarge,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
@@ -78,7 +82,7 @@ fun SecondaryButton(
 
 @Composable
 fun AppTextButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    TextButton(onClick = onClick, modifier = modifier.height(48.dp), enabled = enabled) {
+    TextButton(onClick = onClick, modifier = modifier.heightIn(min = 48.dp), enabled = enabled) {
         Text(text, style = MaterialTheme.typography.labelLarge)
     }
 }
@@ -87,7 +91,7 @@ fun AppTextButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
 fun DestructiveButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     Button(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().height(56.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp),
         enabled = enabled,
         shape = MaterialTheme.shapes.extraLarge,
         colors = ButtonDefaults.buttonColors(

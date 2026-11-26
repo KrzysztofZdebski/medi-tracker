@@ -1,10 +1,13 @@
 package pl.agh.meditracker.feature.today
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -18,6 +21,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import pl.agh.meditracker.model.Dose
 import pl.agh.meditracker.model.Medication
@@ -29,6 +37,7 @@ import pl.agh.meditracker.ui.components.IconBadge
 import pl.agh.meditracker.ui.components.NumberStepper
 import pl.agh.meditracker.ui.components.PrimaryButton
 import pl.agh.meditracker.ui.components.SecondaryButton
+import pl.agh.meditracker.ui.theme.AppMotion
 import pl.agh.meditracker.ui.theme.Warning
 import pl.agh.meditracker.ui.theme.WarningContainer
 
@@ -56,13 +65,25 @@ fun TodaySheets(
     }
     // Keep one modal while switching its content. Replacing dialogs could dismiss
     // the new sheet through the outgoing dialog's asynchronous dismiss callback.
+    // Treść przenika przy zmianie panelu, a wysokość arkusza dopasowuje AppBottomSheet (animateContentSize).
+    val motion = AppMotion.current
     AppBottomSheet(onDismiss, title = title) {
-        when (sheet) {
-            is TodaySheet.Confirm -> ConfirmSheet(sheet.dose, onTake, onSkip, onOpenSnooze, onDismiss)
-            is TodaySheet.Snooze -> SnoozeSheet(sheet.dose, onSnooze, onDismiss, defaultSnoozeMinutes)
-            is TodaySheet.LowStock -> LowStockSheet(sheet.medication, onOpenRefill, onDismiss)
-            is TodaySheet.NoStock -> NoStockSheet(sheet.medication, onOpenRefill, onDismiss)
-            is TodaySheet.Refill -> RefillSheet(sheet.medication, onRefill, onDismiss)
+        AnimatedContent<TodaySheet>(
+            targetState = sheet,
+            modifier = Modifier.fillMaxWidth(),
+            transitionSpec = { motion.crossfade(animateSize = false) },
+            contentKey = { it::class },
+            label = "panelArkusza",
+        ) { shown ->
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                when (shown) {
+                    is TodaySheet.Confirm -> ConfirmSheet(shown.dose, onTake, onSkip, onOpenSnooze, onDismiss)
+                    is TodaySheet.Snooze -> SnoozeSheet(shown.dose, onSnooze, onDismiss, defaultSnoozeMinutes)
+                    is TodaySheet.LowStock -> LowStockSheet(shown.medication, onOpenRefill, onDismiss)
+                    is TodaySheet.NoStock -> NoStockSheet(shown.medication, onOpenRefill, onDismiss)
+                    is TodaySheet.Refill -> RefillSheet(shown.medication, onRefill, onDismiss)
+                }
+            }
         }
     }
 }
@@ -99,9 +120,9 @@ private fun ConfirmSheet(
 private fun SnoozeSheet(dose: Dose, onSnooze: (Dose, Int) -> Unit, onDismiss: () -> Unit, defaultMinutes: Int) {
     var minutes by remember { mutableIntStateOf(defaultMinutes) }
     Muted("Kiedy przypomnieć o tej dawce?")
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         snoozeOptions.forEach { option ->
-            SnoozeChip("$option min", option == minutes, { minutes = option }, Modifier.weight(1f))
+            SnoozeChip("$option min", option == minutes, { minutes = option }, Modifier.weight(1f), spoken = "$option minut")
         }
     }
     Text(
@@ -114,11 +135,17 @@ private fun SnoozeSheet(dose: Dose, onSnooze: (Dose, Int) -> Unit, onDismiss: ()
 }
 
 @Composable
-private fun SnoozeChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
+private fun SnoozeChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier, spoken: String = text) {
     val colors = MaterialTheme.colorScheme
+    // wybór jednej opcji: rola przycisku opcji i stan zaznaczenia, a nie tylko kolor wypełnienia
+    val isSelected = selected
     Surface(
         onClick = onClick,
-        modifier = modifier.height(48.dp),
+        modifier = modifier.heightIn(min = 48.dp).semantics {
+            role = Role.RadioButton
+            this.selected = isSelected
+            contentDescription = spoken
+        },
         shape = CircleShape,
         color = if (selected) colors.primary else colors.surfaceContainer,
         contentColor = if (selected) colors.onPrimary else colors.primary,

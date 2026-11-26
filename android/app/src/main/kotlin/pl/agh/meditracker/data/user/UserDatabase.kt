@@ -100,8 +100,12 @@ interface UserDao {
     @Upsert
     fun upsertMedication(row: MedicationRow)
 
-    @Query("UPDATE medication SET archived_at = :at WHERE id = :id")
-    fun archiveMedication(id: String, at: String)
+    // jedno zapytanie, więc kilka leków archiwizuje się (i przywraca) razem albo wcale
+    @Query("UPDATE medication SET archived_at = :at WHERE id IN (:ids)")
+    fun archiveMedications(ids: List<String>, at: String)
+
+    @Query("UPDATE medication SET archived_at = NULL WHERE id IN (:ids)")
+    fun unarchiveMedications(ids: List<String>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertSchedule(row: ScheduleRow)

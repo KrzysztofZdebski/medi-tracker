@@ -14,16 +14,18 @@ import pl.agh.meditracker.ui.components.AppAlert
 import pl.agh.meditracker.ui.components.AppTextField
 import pl.agh.meditracker.ui.components.PrimaryButton
 import pl.agh.meditracker.ui.components.SecondaryButton
+import pl.agh.meditracker.ui.theme.MotionVisibility
 
 @Composable
 fun DetailsStep(state: AddMedicationUiState, viewModel: AddMedicationViewModel) {
     var unitPicker by rememberSaveable { mutableStateOf(false) }
     val errors = state.detailsErrors
     StepColumn {
-        when {
-            state.showDetailsErrors ->
-                AppAlert("Popraw zaznaczone pola", "Wprowadzone dane zostały zachowane.", AlertTone.Error)
-            state.notFound -> AppAlert("Nie znaleziono leku", "Uzupełnij dane ręcznie.", AlertTone.Info)
+        MotionVisibility(state.showDetailsErrors) {
+            AppAlert("Popraw zaznaczone pola", "Wprowadzone dane zostały zachowane.", AlertTone.Error)
+        }
+        MotionVisibility(!state.showDetailsErrors && state.notFound) {
+            AppAlert("Nie znaleziono leku", "Uzupełnij dane ręcznie.", AlertTone.Info)
         }
         Caption(if (state.editingId != null) "Zmiana danych nie zmienia historii przyjęć." else "Pola oznaczone * są wymagane")
         AppTextField(state.name, { viewModel.updateDetails(name = it) }, "Nazwa leku *", error = errors?.name, tall = state.editingId != null)

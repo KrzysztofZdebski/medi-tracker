@@ -11,11 +11,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -40,6 +40,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -80,12 +88,19 @@ fun AppTextField(
         focused -> colors.primary
         else -> colors.onSurfaceVariant
     }
+    // Pole otwierające wybór (onClick) ma dla TalkBack jeden węzeł: nakładkę-przycisk z etykietą, wartością i błędem.
+    // Samo pole tylko do odczytu jest wtedy ukryte, inaczej byłyby dwa elementy, z których jeden nic nie robi.
+    val picker = onClick != null && enabled
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Box {
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().then(
+                    if (picker) Modifier.clearAndSetSemantics {}
+                    // etykieta z decorationBox jest scalana z polem; błąd dokładamy jako semantykę błędu
+                    else Modifier.semantics { if (error != null) this.error(error) },
+                ),
                 enabled = enabled,
                 readOnly = readOnly || onClick != null,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -126,17 +141,25 @@ fun AppTextField(
                                 )
                             }
                         } else if (trailingIcon != null) {
+                            // ozdobna: rodzaj pola (lista, data) wynika z etykiety i roli przycisku
                             Icon(trailingIcon, contentDescription = null, tint = colors.onSurfaceVariant)
                         }
                     }
                 },
             )
-            if (onClick != null && enabled) {
+            if (picker && onClick != null) {
+                val shown = value.ifEmpty { placeholder.orEmpty() }
                 Box(
                     Modifier
                         .matchParentSize()
                         .clip(shape)
-                        .clickable(onClick = onClick),
+                        .clickable(onClickLabel = "zmienić", role = Role.Button, onClick = onClick)
+                        .semantics {
+                            // „*” oznacza pole wymagane; czytnik przeczytałby „gwiazdka”
+                            contentDescription = if (label.endsWith(" *")) "${label.removeSuffix(" *")}, pole wymagane" else label
+                            if (shown.isNotEmpty()) stateDescription = shown
+                            if (error != null) this.error(error)
+                        },
                 )
             }
         }
@@ -145,7 +168,8 @@ fun AppTextField(
                 error,
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.error,
-                modifier = Modifier.padding(horizontal = 16.dp),
+                // błąd walidacji jest ogłaszany od razu, gdy się pojawi
+                modifier = Modifier.padding(horizontal = 16.dp).semantics { liveRegion = LiveRegionMode.Assertive },
             )
         }
     }
@@ -165,7 +189,7 @@ fun NumberStepper(
     Row(
         modifier
             .fillMaxWidth()
-            .height(56.dp)
+            .heightIn(min = 56.dp)
             .clip(shape)
             .background(colors.surface)
             .then(if (designIcons) Modifier else Modifier.border(if (isError) 2.dp else 1.dp, if (isError) colors.error else colors.outline, shape))
@@ -179,7 +203,8 @@ fun NumberStepper(
         }
         Text(
             value,
-            modifier = Modifier.weight(1f),
+            // po „Zmniejsz”/„Zwiększ” TalkBack odczyta nową wartość
+            modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
             style = MaterialTheme.typography.titleMedium,
             color = if (isError) colors.error else colors.onSurface,
             textAlign = TextAlign.Center,
@@ -203,7 +228,9 @@ fun TimeChip(
     val colors = MaterialTheme.colorScheme
     Surface(
         onClick = onClick,
-        modifier = modifier.height(if (designIcons) 64.dp else 48.dp),
+        modifier = modifier.heightIn(min = if (designIcons) 64.dp else 48.dp).semantics {
+            if (selected) stateDescription = "wybrana"
+        },
         shape = if (designIcons) MaterialTheme.shapes.small else CircleShape,
         color = if (selected) colors.primaryContainer else colors.surface,
         contentColor = if (selected) colors.onPrimaryContainer else colors.onSurface,
@@ -218,9 +245,10 @@ fun TimeChip(
             else Icon(Icons.Outlined.Schedule, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))
             Text(time, style = MaterialTheme.typography.labelLarge)
             if (onEdit != null) {
-                IconButton(onClick = onEdit, modifier = Modifier.size(40.dp)) {
-                    if (designIcons) DesignIcon(R.raw.design_edit_20, 20.dp, "Edytuj")
-                    else Icon(Icons.Outlined.Edit, contentDescription = "Edytuj", modifier = Modifier.size(18.dp))
+                // 48 dp: minimalny obszar dotyku; opis z godziną, bo przycisków „Edytuj” jest kilka
+                IconButton(onClick = onEdit, modifier = Modifier.size(48.dp)) {
+                    if (designIcons) DesignIcon(R.raw.design_edit_20, 20.dp, "Edytuj godzinę $time")
+                    else Icon(Icons.Outlined.Edit, contentDescription = "Edytuj godzinę $time", modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -228,6 +256,7 @@ fun TimeChip(
 }
 
 private val dayLabels = listOf("Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd")
+private val dayNames = listOf("poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela")
 
 @Composable
 fun DaySelector(
@@ -245,7 +274,9 @@ fun DaySelector(
                     .clip(CircleShape)
                     .background(if (isSelected) colors.primary else colors.surface)
                     .border(1.dp, if (isSelected) colors.primary else colors.outlineVariant, CircleShape)
-                    .clickable { onToggle(day) },
+                    // pole wyboru z pełną nazwą dnia zamiast skrótu; 44 dp widoku, obszar dotyku Compose rozszerza do 48 dp
+                    .toggleable(value = isSelected, role = Role.Checkbox, onValueChange = { onToggle(day) })
+                    .semantics { contentDescription = dayNames[index] },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(

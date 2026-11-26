@@ -1,5 +1,6 @@
 package pl.agh.meditracker.feature.history
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -13,6 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import pl.agh.meditracker.core.appViewModel
@@ -22,6 +25,8 @@ import pl.agh.meditracker.model.DoseStatus
 import pl.agh.meditracker.model.HistoryEntry
 import pl.agh.meditracker.ui.components.*
 import pl.agh.meditracker.R
+import pl.agh.meditracker.ui.theme.AppMotion
+import pl.agh.meditracker.ui.theme.itemMotion
 import androidx.compose.foundation.shape.CircleShape
 
 @Composable
@@ -34,36 +39,44 @@ fun HistoryScreen(onOpenToday: () -> Unit, onNotifications: () -> Unit) {
 @Composable
 fun HistoryContent(state: HistoryUiState, onOpenToday: () -> Unit, onFilter: (HistoryFilter) -> Unit, onNotifications: () -> Unit) {
     var filters by rememberSaveable { mutableStateOf(false) }
+    val motion = AppMotion.current
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         AppTopBar("Historia", designIcons = true, largeTitle = true, actions = { NotificationsAction(designIcon = true, onClick = onNotifications) })
-        if (!state.hasHistory) {
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 72.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                DesignBadge(R.raw.design_history_44)
-                Text("Tutaj powstanie\nTwój dziennik", style = MaterialTheme.typography.headlineMedium)
-                MutedHistory("Gdy oznaczysz dawkę jako przyjętą lub pominiętą, zobaczysz ją w historii.")
-                SecondaryButton("Przejdź do dzisiejszych leków", onOpenToday)
-            }
-        } else {
-            LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        MutedHistory("Twój dziennik przyjmowania", Modifier.weight(1f))
-                        IconButton(onClick = { filters = true }) { DesignIcon(R.raw.design_filter_24, 24.dp, "Filtruj historię") }
-                    }
+        // pusty dziennik ↔ lista: przenikanie; po zmianie filtrów dni znikają i przesuwają się płynnie (animateItem)
+        AnimatedContent(state.hasHistory, transitionSpec = { motion.crossfade() }, label = "historia") { hasHistory ->
+            if (!hasHistory) {
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 72.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    DesignBadge(R.raw.design_history_44)
+                    Text("Tutaj powstanie\nTwój dziennik", Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
+                    MutedHistory("Gdy oznaczysz dawkę jako przyjętą lub pominiętą, zobaczysz ją w historii.")
+                    SecondaryButton("Przejdź do dzisiejszych leków", onOpenToday)
                 }
-                if (state.entries.isEmpty()) item {
-                    Text("Brak wpisów dla wybranych filtrów", style = MaterialTheme.typography.titleMedium)
-                    SecondaryButton("Wyczyść filtry", { onFilter(HistoryFilter()) })
-                }
-                state.entries.groupBy { it.date }.forEach { (date, entries) ->
-                    item(key = date.toString()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Text(historyDate(date), style = MaterialTheme.typography.titleMedium)
-                            HistoryCard(entries)
+            } else {
+                LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    item(key = "header") {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            MutedHistory("Twój dziennik przyjmowania", Modifier.weight(1f))
+                            IconButton(onClick = { filters = true }) { DesignIcon(R.raw.design_filter_24, 24.dp, "Filtruj historię") }
                         }
                     }
+                    if (state.entries.isEmpty()) item(key = "no-results") {
+                        Column(itemMotion(motion)) {
+                            Text("Brak wpisów dla wybranych filtrów", style = MaterialTheme.typography.titleMedium)
+                            SecondaryButton("Wyczyść filtry", { onFilter(HistoryFilter()) })
+                        }
+                    }
+                    state.entries.groupBy { it.date }.forEach { (date, entries) ->
+                        item(key = date.toString()) {
+                            Column(itemMotion(motion), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Text(historyDate(date), Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium)
+                                HistoryCard(entries)
+                            }
+                        }
+                    }
+                    item(key = "footer") {
+                        Text("Zapisujesz rzeczywiste przyjęcia i pominięcia.", itemMotion(motion), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
-                item { Text("Zapisujesz rzeczywiste przyjęcia i pominięcia.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }
     }
@@ -78,7 +91,9 @@ fun HistoryCard(entries: List<HistoryEntry>) {
             entries.forEachIndexed { index, entry ->
                 if (index > 0) HorizontalDivider(color = colors.outlineVariant)
                 val style = statusStyle(entry.status)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                // wpis to jeden węzeł TalkBack: „08:00 · Metformina, 1 tabletka · Przyjęto”; ikona stanu jest ozdobna,
+                // bo stan jest w tekście
+                Row(Modifier.semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Surface(Modifier.size(40.dp), shape = CircleShape, color = style.container) {
                         Box(contentAlignment = Alignment.Center) {
                             if (entry.status == DoseStatus.Taken) DesignIcon(R.raw.design_check_20, 20.dp)

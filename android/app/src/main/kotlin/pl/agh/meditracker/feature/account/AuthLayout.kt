@@ -16,6 +16,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import pl.agh.meditracker.ui.components.AlertTone
@@ -43,7 +45,7 @@ internal fun AuthLayout(
                 IconBadge(icon, size = 40.dp)
                 Text("mediTracker", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             }
-            Text(headline, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
+            Text(headline, Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
             if (body != null) {
                 Text(body, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

@@ -8,6 +8,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -85,8 +86,11 @@ private val shapes = Shapes(
     extraLarge = RoundedCornerShape(28.dp),
 )
 
+/** `reducedMotion` domyślnie z ustawień Androida („Usuń animacje”); trafia do [LocalReducedMotion]. */
 @Composable
-fun MediTrackerTheme(theme: AppTheme = AppTheme.Light, content: @Composable () -> Unit) {
+fun MediTrackerTheme(theme: AppTheme = AppTheme.Light, reducedMotion: Boolean = rememberReducedMotion(), content: @Composable () -> Unit) {
     val dark = when (theme) { AppTheme.System -> isSystemInDarkTheme(); AppTheme.Dark -> true; AppTheme.Light -> false }
-    MaterialTheme(colorScheme = if (dark) darkColors else colors, typography = typography, shapes = shapes, content = content)
+    CompositionLocalProvider(LocalReducedMotion provides reducedMotion) {
+        MaterialTheme(colorScheme = if (dark) darkColors else colors, typography = typography, shapes = shapes, content = content)
+    }
 }

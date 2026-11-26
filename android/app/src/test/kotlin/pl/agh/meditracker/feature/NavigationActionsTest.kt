@@ -4,6 +4,8 @@ import pl.agh.meditracker.data.user.useDirectRoomExecutors
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -56,6 +58,42 @@ class NavigationActionsTest {
         compose.setContent { MediTrackerTheme { AppNavHost(true, {}) } }
         compose.onNodeWithText("Przyjęto").performScrollTo().performClick()
         compose.onNodeWithText("Szczegóły leku").assertIsDisplayed()
+    }
+
+    // usunięcie w szczegółach wraca na listę leków ze snackbarem „Cofnij”
+    private fun removeInDetailsAndUndo() {
+        compose.onNodeWithText("Szczegóły leku").assertIsDisplayed()
+        compose.onNodeWithText("Usuń lek").performScrollTo().performClick()
+        compose.mainClock.advanceTimeBy(500)
+        compose.onAllNodesWithText("Usuń lek")[1].performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Moje leki").assertIsDisplayed()
+        compose.onNodeWithText("Usunięto Metformina").assertIsDisplayed()
+        assertTrue(app.container.medications.medications.value.isEmpty())
+
+        compose.onNodeWithText("Cofnij").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("Metformina"), app.container.medications.medications.value.map { it.name })
+        compose.onNodeWithText("Metformina").assertIsDisplayed()
+    }
+
+    @Test fun removingFromDetailsReturnsToListWithUndo() {
+        addMedication()
+        compose.setContent { MediTrackerTheme { AppNavHost(true, {}) } }
+        compose.onNode(hasText("Leki") and hasClickAction()).performClick()
+        compose.onNodeWithText("Metformina").performClick()
+        removeInDetailsAndUndo()
+        // wynik nawigacji został zużyty: kolejny powrót na listę nie pokazuje snackbara ponownie
+        compose.onNodeWithText("Metformina").performClick()
+        compose.onNodeWithContentDescription("Wstecz").performClick()
+        compose.onAllNodesWithText("Usunięto Metformina").assertCountEquals(0)
+    }
+
+    @Test fun removingFromDetailsOpenedFromTodayGoesToMedicationsTab() {
+        addMedication(DoseStatus.Taken)
+        compose.setContent { MediTrackerTheme { AppNavHost(true, {}) } }
+        compose.onNodeWithText("Przyjęto").performScrollTo().performClick()
+        removeInDetailsAndUndo()
     }
 
     @Test fun snoozeUsesDefaultFromSettingsAndReturnsVisibleFeedback() {

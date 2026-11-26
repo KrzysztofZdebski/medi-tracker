@@ -22,6 +22,7 @@ import pl.agh.meditracker.ui.components.AppAlert
 import pl.agh.meditracker.ui.components.AppTextField
 import pl.agh.meditracker.ui.components.PrimaryButton
 import pl.agh.meditracker.ui.components.SecondaryButton
+import pl.agh.meditracker.ui.theme.MotionPresence
 
 /** T07: zmiana hasła z poziomu "Moje konto" (spec §6.4). Hasła żyją tylko w polach i w wywołaniu repozytorium. */
 class ChangePasswordViewModel(private val change: suspend (old: CharArray, new: CharArray) -> ApiResult<Unit>) : ViewModel() {
@@ -65,12 +66,13 @@ fun ChangePasswordScreen(viewModel: ChangePasswordViewModel, onBack: () -> Unit,
     val tooShort = new.length < MIN_PASSWORD
     val mismatch = new != repeat
     AuthLayout("Zmień hasło", "Ustaw nowe hasło", "Podaj obecne hasło, aby potwierdzić tę zmianę.", onBack, Icons.Outlined.Lock) {
-        when (viewModel.error) {
-            null -> Unit
-            ApiError.InvalidCredentials -> AppAlert("Obecne hasło jest nieprawidłowe", "Sprawdź je i spróbuj ponownie.", AlertTone.Error)
-            ApiError.Network -> AppAlert("Brak połączenia", "Sprawdź połączenie z internetem i spróbuj ponownie.", AlertTone.Error)
-            ApiError.Unauthorized -> AppAlert("Sesja wygasła", "Zaloguj się ponownie, aby zmienić hasło.", AlertTone.Error)
-            else -> AppAlert("Coś poszło nie tak", "Spróbuj ponownie za chwilę.", AlertTone.Error)
+        MotionPresence(viewModel.error) { error ->
+            when (error) {
+                ApiError.InvalidCredentials -> AppAlert("Obecne hasło jest nieprawidłowe", "Sprawdź je i spróbuj ponownie.", AlertTone.Error)
+                ApiError.Network -> AppAlert("Brak połączenia", "Sprawdź połączenie z internetem i spróbuj ponownie.", AlertTone.Error)
+                ApiError.Unauthorized -> AppAlert("Sesja wygasła", "Zaloguj się ponownie, aby zmienić hasło.", AlertTone.Error)
+                else -> AppAlert("Coś poszło nie tak", "Spróbuj ponownie za chwilę.", AlertTone.Error)
+            }
         }
         AppTextField(current, { current = it }, "Obecne hasło", Modifier, enabled = !busy, password = true)
         AppTextField(

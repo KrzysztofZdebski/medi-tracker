@@ -9,6 +9,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import pl.agh.meditracker.feature.addmedication.*
@@ -32,14 +34,14 @@ fun ScannerFlow(state: AddMedicationUiState, model: AddMedicationViewModel) {
             when (state.step) {
                 Step.Ean -> ManualEan(state.ean, model::lookup, model::addManually)
                 Step.Recognizing -> {
-                    Text("Rozpoznawanie leku...", style = MaterialTheme.typography.headlineMedium)
+                    Text("Rozpoznawanie leku...", Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
                     Caption("Szukamy danych pasujących do odczytanego kodu.")
                     LinearProgressIndicator(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.outlineVariant)
                     AppTextField(state.ean, {}, "ODCZYTANY EAN", readOnly = true)
                     SecondaryButton("Anuluj", model::back)
                 }
                 Step.NotFound -> {
-                    Text("Nie znaleziono leku", style = MaterialTheme.typography.headlineMedium)
+                    Text("Nie znaleziono leku", Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
                     Caption("Ten kod nie zwrócił danych. Sprawdź opakowanie lub dodaj lek ręcznie.")
                     AppTextField(state.ean, {}, "Odczytany EAN", readOnly = true)
                     PrimaryButton("Spróbuj ponownie", { scanBarcode(context, { model.rescan(it.gtin14) }, model::enterEan) })
@@ -47,7 +49,7 @@ fun ScannerFlow(state: AddMedicationUiState, model: AddMedicationViewModel) {
                     AppTextButton("Dodaj lek ręcznie", model::addManually, Modifier.fillMaxWidth())
                 }
                 Step.LookupError -> {
-                    Text("Sprawdź połączenie", style = MaterialTheme.typography.headlineMedium)
+                    Text("Sprawdź połączenie", Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
                     Caption("Nie udało się pobrać danych leku. Odczytany kod został zachowany.")
                     AppTextField(state.ean, {}, "EAN", readOnly = true, tall = true)
                     PrimaryButton("Spróbuj ponownie", { model.lookup(state.ean) })
@@ -64,7 +66,7 @@ fun ScannerFlow(state: AddMedicationUiState, model: AddMedicationViewModel) {
 private fun ManualEan(initial: String, onSearch: (String) -> Unit, onManual: () -> Unit) {
     var ean by rememberSaveable { mutableStateOf(initial) }
     var submitted by rememberSaveable { mutableStateOf(false) }
-    Text("Kod z opakowania", style = MaterialTheme.typography.headlineMedium)
+    Text("Kod z opakowania", Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
     Caption("Wpisz cyfry znajdujące się pod kodem kreskowym.")
     AppTextField(ean, { ean = it.filter { char -> char in '0'..'9' }.take(14) }, "Kod EAN", keyboardType = KeyboardType.Number, error = if (submitted && !isEanInput(ean)) "Wpisz kod zawierający od 8 do 14 cyfr." else null, tall = true)
     Spacer(Modifier.height(8.dp))

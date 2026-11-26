@@ -1,10 +1,12 @@
 package pl.agh.meditracker.ui.navigation
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -49,6 +51,8 @@ import pl.agh.meditracker.feature.settings.PasswordChangedContent
 import pl.agh.meditracker.feature.settings.SettingsScreen
 import pl.agh.meditracker.feature.settings.NotificationSettingsScreen
 import pl.agh.meditracker.feature.settings.AboutScreen
+import pl.agh.meditracker.feature.settings.CalendarSettingsScreen
+import pl.agh.meditracker.ui.theme.AppMotion
 
 private val tabs = listOf("today", "medications", "history", "settings")
 
@@ -66,6 +70,10 @@ private const val RESET_PASSWORD = "reset/password"
 private const val RESET_DONE = "reset/done"
 private const val SESSION_EXPIRED = "session-expired"
 
+// lista leków i wynik nawigacji ze szczegółów: id usuniętych leków (ArrayList<String>) w savedStateHandle listy
+private const val MEDICATIONS = "medications?added={added}"
+private const val REMOVED_MEDICATIONS = "removedMedications"
+
 private const val FROM_ONBOARDING = "onboarding"
 private const val FROM_SETTINGS = "settings"
 
@@ -79,6 +87,7 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route?.substringBefore('?')
     val container = (LocalContext.current.applicationContext as MediTrackerApp).container
+    val motion = AppMotion.current
 
     // Start po zimnym starcie wg stanu konta: nieskończona rejestracja wraca tam, gdzie stanęła (spec §6.1.3).
     // SessionExpired nie wymusza U13 (spec §6.8), a pytanie przywróć / zachowaj (R17) pokazuje RestoreChoiceHost.
@@ -122,7 +131,14 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
                 if (route in tabs) AppBottomBar(tabs.indexOf(route), designIcons = route == "history" || route == "settings") { nav.openTab(tabs[it]) }
             },
         ) { padding ->
-            NavHost(nav, startDestination = startRoute, Modifier.padding(padding)) {
+            // zakładki: przenikanie; ekrany wchodzące głębiej: oś X, powrót w drugą stronę
+            NavHost(
+                nav, startDestination = startRoute, Modifier.padding(padding),
+                enterTransition = { if (isTabSwitch()) motion.fadeThroughEnter() else motion.sharedAxisEnter(forward = true) },
+                exitTransition = { if (isTabSwitch()) motion.fadeThroughExit() else motion.sharedAxisExit(forward = true) },
+                popEnterTransition = { if (isTabSwitch()) motion.fadeThroughEnter() else motion.sharedAxisEnter(forward = false) },
+                popExitTransition = { if (isTabSwitch()) motion.fadeThroughExit() else motion.sharedAxisExit(forward = false) },
+            ) {
                 composable("onboarding?step={step}", arguments = listOf(navArgument("step") { defaultValue = "welcome" })) { e ->
                     OnboardingScreen(
                         onFinished = {
@@ -238,13 +254,17 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
                         onOpenMedication = { nav.navigate("medication/$it") },
                     )
                 }
-                composable("medications?added={added}") { e ->
+                composable(MEDICATIONS) { e ->
+                    val removed by e.savedStateHandle.getStateFlow<ArrayList<String>?>(REMOVED_MEDICATIONS, null).collectAsState()
                     MedicationsScreen(
                         justAdded = e.arguments?.getString("added") == "true",
                         onAddMedication = { nav.navigate("add") },
                         onOpenToday = { nav.openTab("today") },
                         onOpenMedication = { nav.navigate("medication/$it") },
                         onNotifications = { nav.navigate("notifications") },
+                        removedInDetails = removed,
+                        // null zamiast remove(): remove() nie aktualizuje już zebranego getStateFlow
+                        onRemovedShown = { e.savedStateHandle.set<ArrayList<String>?>(REMOVED_MEDICATIONS, null) },
                     )
                 }
                 composable("add") {
@@ -259,6 +279,11 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
                     val id = e.arguments?.getString("id").orEmpty()
                     MedicationDetailsScreen(id, onBack = { nav.popBackStack() }, onEdit = { schedule ->
                         nav.navigate("edit/$id?schedule=$schedule")
+                    }, onRemoved = { removedId ->
+                        // szczegóły otwarte z listy wracają do niej; otwarte z Dzisiaj przechodzą na zakładkę Leki
+                        val fromList = runCatching { nav.getBackStackEntry(MEDICATIONS) }.isSuccess
+                        if (fromList) nav.popBackStack(MEDICATIONS, inclusive = false) else nav.openTab("medications")
+                        nav.currentBackStackEntry?.savedStateHandle?.set(REMOVED_MEDICATIONS, arrayListOf(removedId))
                     })
                 }
                 composable("edit/{id}?schedule={schedule}") { e ->
@@ -280,6 +305,7 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
                             )
                         },
                         onNotifications = { nav.navigate("notifications") },
+                        onCalendar = { nav.navigate("calendar") },
                         onAbout = { nav.navigate("about") },
                     )
                 }
@@ -305,12 +331,16 @@ fun AppNavHost(onboardingDone: Boolean, onOnboardingFinished: () -> Unit) {
                 }
                 composable("notifications") { NotificationSettingsScreen(onBack = { nav.popBackStack() }, onOpenSettings = { nav.openTab("settings") }) }
                 composable("about") { AboutScreen(onBack = { nav.popBackStack() }) }
+                composable("calendar") { CalendarSettingsScreen(onBack = { nav.popBackStack() }) }
             }
         }
         RestoreChoiceHost()
         ConflictChoiceHost()
     }
 }
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch() =
+    initialState.destination.route?.substringBefore('?') in tabs && targetState.destination.route?.substringBefore('?') in tabs
 
 private fun NavHostController.openTab(tab: String) {
     if (tab == "today") {

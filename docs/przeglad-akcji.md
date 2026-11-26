@@ -11,6 +11,7 @@ Aplikacja łączy się z serwerem mediTracker (`BuildConfig.SERVER_URL`): API ko
 | Powiadomienia | Wyłącznie flaga preferencji | Zgoda systemowa, rzeczywisty stan kanału, włączenie/wyłączenie przypomnień, otwieranie ustawień Androida, testowe powiadomienie z potwierdzeniem |
 | Przypomnij później w ustawieniach | Brak | Wybór domyślnego czasu, zapis albo anulowanie; używany przy odraczaniu dawek |
 | Dźwięk i wibracje | Brak | Ustawienia właściwego kanału powiadomień Androida; aktualny stan po powrocie |
+| Kalendarz | Brak | Eksport dawek do kalendarza telefonu: zgoda systemowa dopiero po włączeniu (odmowa → link do ustawień Androida), własny kalendarz „mediTracker” albo wybrany kalendarz użytkownika, przełącznik „Pokazuj w kalendarzu” w szczegółach leku, usuwanie wszystkich dodanych wydarzeń |
 | Motyw | Brak | Systemowy, jasny, ciemny; natychmiastowa zmiana i trwały zapis |
 | O aplikacji | Brak | Faktyczna wersja, źródło i data danych, link do RPL, aktualizacja katalogu ze stanem ładowania i wynikiem |
 | Karta/status przyjętej lub pominiętej dawki | Kliknięcie ignorowane | Szczegóły danego leku |
@@ -20,10 +21,13 @@ Aplikacja łączy się z serwerem mediTracker (`BuildConfig.SERVER_URL`): API ko
 | Alert niskiego zapasu | „Przypomnij później” tylko zamykał panel | Uczciwa etykieta „Zamknij”; uzupełnianie zapasu pozostaje osobną akcją |
 | Ponowna próba wyszukania bez katalogu | Ponownie ten sam błąd | Najpierw pobranie katalogu; brak wyniku odróżniony od błędu pobierania |
 | Aktualizacja katalogu | HTTP i błędny hash mogły zakończyć się cicho | Błąd trafia do interfejsu; zachowany stary katalog, weryfikacja SHA-256 i wielkości |
+| Usuwanie leku na liście | Tylko w szczegółach, bez cofnięcia | Przesunięcie karty w lewo (albo akcja „Usuń” czytnika ekranu) usuwa od razu; snackbar „Usunięto {nazwa}” z „Cofnij” przywraca lek w całości |
+| Usuwanie kilku leków | Brak | Długie przytrzymanie włącza zaznaczanie („Zaznaczono: N”, „Zaznacz wszystkie”, zamknięcie lub Wstecz); usunięcie po potwierdzeniu „Usunąć N leków?” i z jednym „Cofnij” dla wszystkich |
+| „Usuń lek” w szczegółach | Powrót do poprzedniego ekranu bez możliwości cofnięcia | Powrót na listę leków (także ze szczegółów otwartych z Dzisiaj) ze snackbarem „Cofnij”; id usuniętego leku przechodzi przez `savedStateHandle` listy |
 
 ## Pozostałe przejrzane akcje
 
-Dodawanie leku (skan i EAN, dodanie ręczne, znaleziony produkt, edycja danych, dawkowanie, wybór dni i godzin, daty, zapas, zapis i odrzucenie), edycja leku i harmonogramu, uzupełnienie zapasu, usuwanie z potwierdzeniem, przyjęcie/pominięcie/cofnięcie dawki, filtry historii i dolne zakładki mają podłączone operacje lub nawigację. Anulowanie skanera Google Play Services otwiera wpisywanie EAN.
+Dodawanie leku (skan i EAN, dodanie ręczne, znaleziony produkt, edycja danych, dawkowanie, wybór dni i godzin, daty, zapas, zapis i odrzucenie), edycja leku i harmonogramu, uzupełnienie zapasu, usuwanie (w szczegółach z potwierdzeniem, na liście przesunięciem lub zaznaczeniem, z „Cofnij”), przyjęcie/pominięcie/cofnięcie dawki, filtry historii i dolne zakładki mają podłączone operacje lub nawigację. Anulowanie skanera Google Play Services otwiera wpisywanie EAN.
 
 Puste funkcje pozostały wyłącznie w podglądach `@Preview` i jako settery pól tylko do odczytu, których wybór obsługuje odrębne `onClick`. Wymagane akcje kart leków/dawek i dzwonka nie mają już domyślnych pustych callbacków.
 

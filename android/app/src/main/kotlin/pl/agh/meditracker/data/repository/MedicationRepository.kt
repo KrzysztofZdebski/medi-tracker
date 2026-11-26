@@ -42,11 +42,18 @@ class MedicationRepository(
     initial: StoredState = StoredState(),
     writeDispatcher: CoroutineDispatcher = serialIo(),
 ) {
-    // leki i wersje ich harmonogramów w jednym stanie, żeby nikt nie zobaczył niespójnej pary
+    // leki i wersje ich harmonogramów w jednym stanie, żeby nikt nie zobaczył niespójnej pary;
+    // [removed] to leki usunięte w tej sesji, które „Cofnij” może jeszcze przywrócić
     private data class Core(
         val medications: List<Medication>,
         val schedules: Map<String, List<Pair<LocalDateTime, Schedule>>>,
+        val removed: Map<String, Removed> = emptyMap(),
     )
+
+    // Usunięcie zdejmuje z pamięci tylko sam lek: wersje harmonogramu, dziennik dawek i historia zostają,
+    // więc do cofnięcia wystarczy lek (z zapasem z chwili usunięcia) i jego miejsce na liście.
+    // [before] to leki stojące przed nim; przywrócony wraca za ostatnim z nich, który nadal jest na liście.
+    private data class Removed(val medication: Medication, val before: List<String>)
 
     private val core = MutableStateFlow(Core(initial.medications, initial.schedules))
 
@@ -122,10 +129,55 @@ class MedicationRepository(
         persist { saveMedication(medication) }
     }
 
-    fun remove(id: String) {
-        core.update { c -> c.copy(medications = c.medications.filterNot { it.id == id }) }
+    // usunięty lek zostaje w bazie z archived_at (odwołuje się do niego historia); zwraca usunięty lek
+    fun remove(id: String): Medication? = removeAll(listOf(id)).firstOrNull()
+
+    // usuwa kilka leków jedną zmianą stanu i jednym zapisem; zwraca te, które faktycznie były na liście
+    fun removeAll(ids: Collection<String>): List<Medication> {
+        val wanted = ids.toSet()
+        var taken = emptyList<Medication>()
+        core.update { c ->
+            val order = c.medications.map { it.id }
+            taken = c.medications.filter { it.id in wanted }
+            val stash = taken.associate { med -> med.id to Removed(med, order.subList(0, order.indexOf(med.id))) }
+            c.copy(medications = c.medications.filterNot { it.id in wanted }, removed = c.removed + stash)
+        }
+        if (taken.isEmpty()) return taken
         val at = LocalDateTime.now(clock)
-        persist { archiveMedication(id, at) }
+        val removedIds = taken.map { it.id }
+        persist { archiveMedications(removedIds, at) }
+        return taken
+    }
+
+    // „Cofnij”: lek wraca z tym samym id, harmonogramem, zapasem i miejscem na liście
+    fun restore(id: String): Medication? = restoreAll(listOf(id)).firstOrNull()
+
+    // Przywraca leki usunięte w tej sesji (po przeładowaniu bazy, np. przywróceniu kopii, nie ma już czego cofać).
+    // Lek, który jest już na liście, zostaje pominięty. Zwraca przywrócone leki.
+    fun restoreAll(ids: Collection<String>): List<Medication> {
+        val wanted = ids.toSet()
+        var restored = emptyList<Medication>()
+        core.update { c ->
+            val present = c.medications.map { it.id }.toSet()
+            val back = c.removed.values.filter { it.medication.id in wanted && it.medication.id !in present }
+            restored = back.map { it.medication }
+            val meds = c.medications.toMutableList()
+            back.forEach { r ->
+                val after = r.before.maxOfOrNull { id -> meds.indexOfFirst { it.id == id } } ?: -1
+                meds.add(after + 1, r.medication)
+            }
+            c.copy(medications = meds, removed = c.removed - wanted)
+        }
+        if (restored.isEmpty()) return restored
+        val restoredIds = restored.map { it.id }
+        persist { unarchiveMedications(restoredIds) }
+        return restored
+    }
+
+    // leki usunięte w tej sesji, które da się jeszcze przywrócić (np. do treści komunikatu po powrocie ze szczegółów)
+    fun recentlyRemoved(ids: Collection<String>): List<Medication> {
+        val removed = core.value.removed
+        return ids.mapNotNull { removed[it]?.medication }
     }
 
     fun dosesFor(date: LocalDate): Flow<List<Dose>> = combine(core, logs) { state, logs ->

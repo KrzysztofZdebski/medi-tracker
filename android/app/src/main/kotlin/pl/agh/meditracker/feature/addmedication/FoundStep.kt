@@ -16,6 +16,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import pl.agh.meditracker.ui.components.AlertTone
 import pl.agh.meditracker.ui.components.AppAlert
@@ -36,7 +38,7 @@ fun FoundStep(state: AddMedicationUiState, viewModel: AddMedicationViewModel) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.Medication, contentDescription = null, tint = colors.primary, modifier = Modifier.size(36.dp))
-                    Text(state.name, style = MaterialTheme.typography.headlineMedium)
+                    Text(state.name, Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
                 }
                 Text(
                     listOf(state.strength, state.form).filter { it.isNotBlank() }.joinToString(" · "),
@@ -57,7 +59,8 @@ fun FoundStep(state: AddMedicationUiState, viewModel: AddMedicationViewModel) {
 @Composable
 private fun Info(label: String, value: String) {
     if (value.isBlank()) return
-    Column {
+    // etykieta i wartość czytane razem: „Producent, …”
+    Column(Modifier.semantics(mergeDescendants = true) {}) {
         Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

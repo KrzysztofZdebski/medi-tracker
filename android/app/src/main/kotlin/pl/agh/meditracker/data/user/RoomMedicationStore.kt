@@ -48,7 +48,9 @@ class RoomMedicationStore(private val dao: UserDao) : MedicationStore {
 
     override fun saveMedication(medication: Medication) = dao.upsertMedication(MedicationRow(medication.toColumns()))
 
-    override fun archiveMedication(id: String, at: LocalDateTime) = dao.archiveMedication(id, at.toString())
+    override fun archiveMedications(ids: List<String>, at: LocalDateTime) = dao.archiveMedications(ids, at.toString())
+
+    override fun unarchiveMedications(ids: List<String>) = dao.unarchiveMedications(ids)
 
     override fun saveSchedule(medicationId: String, version: Int, validFrom: LocalDateTime, schedule: Schedule) =
         dao.insertSchedule(ScheduleRow(medicationId, version, validFrom.takeIf { it != LocalDateTime.MIN }?.toString(), schedule.toColumns()))

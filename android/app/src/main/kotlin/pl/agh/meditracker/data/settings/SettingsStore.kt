@@ -17,6 +17,15 @@ data class AppSettings(
     val theme: AppTheme = AppTheme.System,
 )
 
+// Eksport dawek do kalendarza systemowego. Tylko na tym telefonie, poza kopią zapasową.
+data class CalendarSettings(
+    val enabled: Boolean = false,
+    // null: własny kalendarz „mediTracker” utworzony przez aplikację
+    val calendarId: Long? = null,
+    // leki, których dawek nie pokazujemy w kalendarzu (domyślnie każdy lek jest pokazywany)
+    val excluded: Set<String> = emptySet(),
+)
+
 class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
     private fun read() = AppSettings(
@@ -26,6 +35,14 @@ class SettingsStore(context: Context) {
     )
     private val _state = MutableStateFlow(read())
     val state: StateFlow<AppSettings> = _state
+
+    private fun readCalendar() = CalendarSettings(
+        prefs.getBoolean("calendar_enabled", false),
+        prefs.getLong("calendar_id", -1L).takeIf { it >= 0 },
+        prefs.getStringSet("calendar_excluded", emptySet()).orEmpty().toSet(),
+    )
+    private val _calendar = MutableStateFlow(readCalendar())
+    val calendar: StateFlow<CalendarSettings> = _calendar
 
     var onboardingDone: Boolean
         get() = prefs.getBoolean("onboarding_done", false)
@@ -71,6 +88,31 @@ class SettingsStore(context: Context) {
     var scheduledAlarms: Set<String>
         get() = prefs.getStringSet("scheduled_alarms", emptySet()).orEmpty()
         set(value) = prefs.edit().putStringSet("scheduled_alarms", value).apply()
+
+    var calendarEnabled: Boolean
+        get() = calendar.value.enabled
+        set(value) {
+            prefs.edit().putBoolean("calendar_enabled", value).apply()
+            _calendar.value = readCalendar()
+        }
+
+    var calendarId: Long?
+        get() = calendar.value.calendarId
+        set(value) {
+            prefs.edit().apply { if (value == null) remove("calendar_id") else putLong("calendar_id", value) }.apply()
+            _calendar.value = readCalendar()
+        }
+
+    fun setShownInCalendar(medicationId: String, shown: Boolean) {
+        val excluded = calendar.value.excluded.let { if (shown) it - medicationId else it + medicationId }
+        prefs.edit().putStringSet("calendar_excluded", excluded).apply()
+        _calendar.value = readCalendar()
+    }
+
+    // mapowanie dodanych wydarzeń (JSON z CalendarSync); bez niego nie dałoby się ich później zmienić ani usunąć
+    var calendarEvents: String?
+        get() = prefs.getString("calendar_events", null)
+        set(value) = prefs.edit().apply { if (value == null) remove("calendar_events") else putString("calendar_events", value) }.apply()
 
     companion object { val snoozeOptions = listOf(10, 15, 30, 60) }
 }
