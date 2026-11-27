@@ -20,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
@@ -120,7 +122,7 @@ fun CalendarSettingsContent(
             }
             message?.let { AppAlert("Kalendarz", it, AlertTone.Info) }
             if (granted) {
-                Text("Kalendarz docelowy", style = MaterialTheme.typography.titleMedium, color = colors.onBackground)
+                Text("Kalendarz docelowy", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium, color = colors.onBackground)
                 SettingsCard {
                     Column(Modifier.selectableGroup()) {
                         CalendarOption("mediTracker", "Osobny kalendarz na tym telefonie", selectedCalendarId == null) { onChooseCalendar(null) }

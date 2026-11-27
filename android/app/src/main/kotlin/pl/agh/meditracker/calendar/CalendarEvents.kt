@@ -93,7 +93,7 @@ fun rrule(rule: String, untilMillis: Long?): String =
 private fun shortHash(text: String): String =
     MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).take(8).joinToString("") { "%02x".format(it) }
 
-fun calendarTitle(medication: Medication) = "💊 ${medication.name} ${medication.strength}".trim()
+fun calendarTitle(medication: Medication) = "${medication.name} ${medication.strength}".trim()
 
 fun calendarDescription(medication: Medication) =
     "Dawka: ${medication.unit.format(medication.schedule.doseQty)}\nPrzypomnienia wysyła aplikacja mediTracker."

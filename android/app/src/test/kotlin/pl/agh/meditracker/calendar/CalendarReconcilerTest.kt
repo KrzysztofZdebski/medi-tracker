@@ -49,7 +49,7 @@ class CalendarReconcilerTest {
     @Test fun addsOneRecurringEventPerDoseTime() {
         sync(med())
         val (morning, night) = values()
-        assertEquals("💊 Metformina 500 mg", morning.title)
+        assertEquals("Metformina 500 mg", morning.title)
         assertTrue(morning.description.contains("Dawka: 1 tabletka"))
         assertEquals(millis(start.atTime(eight)), morning.startMillis)
         assertEquals(millis(start.atTime(evening)), night.startMillis)
@@ -120,7 +120,7 @@ class CalendarReconcilerTest {
         val ids = gateway.rows.keys.toSet()
         sync(med(name = "Metformax"))
         assertEquals(ids, gateway.rows.keys)
-        assertTrue(gateway.rows.values.all { it.values.title == "💊 Metformax 500 mg" && it.values.rrule == "FREQ=DAILY" })
+        assertTrue(gateway.rows.values.all { it.values.title == "Metformax 500 mg" && it.values.rrule == "FREQ=DAILY" })
         assertTrue(reconciler.state.past.isEmpty())
     }
 
@@ -141,7 +141,7 @@ class CalendarReconcilerTest {
         assertEquals(1, reconciler.state.past.size)
 
         sync(med(times = listOf(nine, evening)), med(id = "m2", name = "Apap", times = listOf(evening)), excluded = setOf("m1"))
-        assertEquals(listOf("💊 Apap 500 mg"), values().map { it.title })
+        assertEquals(listOf("Apap 500 mg"), values().map { it.title })
         assertTrue(reconciler.state.past.isEmpty())
         assertEquals(setOf("m2@20:00"), reconciler.state.events.keys)
 
@@ -182,7 +182,7 @@ class CalendarReconcilerTest {
         gateway.rows.clear()
         sync(med(name = "Metformax"))
         assertEquals(2, gateway.rows.size)
-        assertTrue(gateway.rows.values.all { it.values.title == "💊 Metformax 500 mg" })
+        assertTrue(gateway.rows.values.all { it.values.title == "Metformax 500 mg" })
     }
 
     @Test fun reconcilerResumesFromSavedState() {

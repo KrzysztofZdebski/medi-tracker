@@ -26,7 +26,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.customActions
@@ -227,7 +228,11 @@ private fun SwipeToDelete(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    val state = rememberSwipeToDismissBoxState()
+    // Zwykłe remember, nie rememberSwipeToDismissBoxState: tamten stan jest zapisywany pod kluczem karty, więc karta
+    // przywrócona przez „Cofnij” wracała jako już przesunięta i od razu usuwała lek drugi raz.
+    // Próg 40% szerokości: krótkie, wolne przeciągnięcie (np. przy przewijaniu) nie usuwa leku; szybki gest nadal tak.
+    val density = LocalDensity.current
+    val state = remember { SwipeToDismissBoxState(SwipeToDismissBoxValue.Settled, density, { true }, { distance -> distance * 0.4f }) }
     val delete by rememberUpdatedState(onDelete)
     // currentValue zmienia się dopiero po puszczeniu karty za progiem, więc samo przeciąganie niczego nie usuwa
     LaunchedEffect(state.currentValue) {

@@ -130,9 +130,21 @@ class ContentResolverCalendarGateway(private val resolver: ContentResolver) : Ca
     override fun update(eventId: Long, event: CalendarEventValues): Boolean =
         resolver.update(ContentUris.withAppendedId(Events.CONTENT_URI, eventId), event.toContentValues(), null, null) > 0
 
+    // Dostawca kalendarza przelicza wystąpienia serii tylko, gdy zmiana zawiera DTSTART (z DURATION i strefą);
+    // sama zmiana RRULE zostawiała zamkniętą serię ze wszystkimi przyszłymi wystąpieniami. Dlatego te pola
+    // są czytane z wydarzenia i zapisywane razem z nową regułą.
     override fun updateRule(eventId: Long, rrule: String): Boolean {
-        val values = ContentValues().apply { put(Events.RRULE, rrule) }
-        return resolver.update(ContentUris.withAppendedId(Events.CONTENT_URI, eventId), values, null, null) > 0
+        val uri = ContentUris.withAppendedId(Events.CONTENT_URI, eventId)
+        val values = resolver.query(uri, arrayOf(Events.DTSTART, Events.DURATION, Events.EVENT_TIMEZONE), null, null, null)?.use { c ->
+            if (!c.moveToFirst()) return@use null
+            ContentValues().apply {
+                put(Events.DTSTART, c.getLong(0))
+                put(Events.DURATION, c.getString(1))
+                put(Events.EVENT_TIMEZONE, c.getString(2))
+                put(Events.RRULE, rrule)
+            }
+        } ?: return false
+        return resolver.update(uri, values, null, null) > 0
     }
 
     override fun delete(eventId: Long) {

@@ -96,6 +96,17 @@ class MedicationRepositoryTest {
     }
 
     @Test
+    fun undoingTwoSeparateRemovalsRestoresOriginalOrder() {
+        listOf("B", "C").forEach { repo.add(med.copy(name = it)) }
+        val ids = repo.medications.value.map { it.id }
+        // jak na telefonie: dwa razy pierwsza karta, potem jedno „Cofnij” dla obu
+        repo.remove(ids[0])
+        repo.remove(ids[1])
+        repo.restoreAll(listOf(ids[0], ids[1]))
+        assertEquals(listOf("Metformina", "B", "C"), repo.medications.value.map { it.name })
+    }
+
+    @Test
     fun polishPlurals() {
         assertEquals(listOf("1 tabletka", "3 tabletki", "5 tabletek", "12 tabletek", "22 tabletki"),
             listOf(1, 3, 5, 12, 22).map(DoseUnit.Tablet::format))

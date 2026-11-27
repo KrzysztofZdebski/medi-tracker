@@ -134,6 +134,20 @@ class CalendarSyncTest {
         assertEquals(2, gateway.inCalendar(FakeCalendarGateway.LOCAL_ID).size)
     }
 
+    // kalendarz „mediTracker” usunięty poza aplikacją: zapisane mapowanie nie może blokować dodania wydarzeń od nowa
+    @Test fun eventsAreRecreatedWhenOwnCalendarDisappeared() = runTest {
+        repository.add(metformin)
+        settings.calendarEnabled = true
+        startSync()
+        settle()
+        assertEquals(2, gateway.rows.size)
+
+        gateway.deleteLocalCalendar()
+        startSync().refresh()
+        settle()
+        assertEquals(2, gateway.inCalendar(FakeCalendarGateway.LOCAL_ID).size)
+    }
+
     @Test fun revokedPermissionDisablesExportWithoutCrashing() = runTest {
         repository.add(metformin)
         settings.calendarEnabled = true

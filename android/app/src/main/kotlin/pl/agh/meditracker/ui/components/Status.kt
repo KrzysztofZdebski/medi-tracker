@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -45,7 +47,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import pl.agh.meditracker.model.DoseStatus
 import pl.agh.meditracker.ui.theme.AppMotion
+import pl.agh.meditracker.ui.theme.Error
 import pl.agh.meditracker.ui.theme.ErrorContainer
+import pl.agh.meditracker.ui.theme.TextColor
 import pl.agh.meditracker.ui.theme.MotionDuration
 import pl.agh.meditracker.ui.theme.MotionEasing
 import pl.agh.meditracker.ui.theme.Line
@@ -70,6 +74,16 @@ internal fun statusStyle(status: DoseStatus): StatusStyle {
         DoseStatus.Skipped -> StatusStyle("Pominięto", Icons.Outlined.Close, colors.surfaceContainer, colors.onSurfaceVariant)
         DoseStatus.Snoozed -> StatusStyle("Odroczono", Icons.Outlined.Snooze, colors.primaryContainer, colors.primary)
     }
+}
+
+private val SuccessOnDark = Color(0xFF8FD3A6)
+
+/** Kolor podpisu stanu dawki stojącego na tle karty (np. wpis w historii), a nie na tle odznaki. */
+fun statusTextColor(status: DoseStatus, colors: ColorScheme): Color = when (status) {
+    // Success jest ciemna (dobrana do jasnej odznaki); na ciemnej karcie potrzebna jasna zieleń
+    DoseStatus.Taken -> if (colors.surface.luminance() < 0.5f) SuccessOnDark else Success
+    DoseStatus.Snoozed -> colors.primary
+    DoseStatus.Pending, DoseStatus.Skipped -> colors.onSurfaceVariant
 }
 
 /** Stan dawki dla czytnika ekranu (stateDescription), bo na karcie widać go głównie kolorem i ikoną. */
@@ -179,14 +193,26 @@ fun StockIndicator(
     }
 }
 
+/** Kolory komunikatu: tło, tytuł z ikoną i treść. */
+data class AlertColors(val container: Color, val content: Color, val message: Color)
+
+// Tła ostrzeżenia, błędu i sukcesu są jasne w obu motywach, więc tekst na nich też jest stały i ciemny
+// (wcześniej treść brała onSurface, które w ciemnym motywie jest jasne, i była nieczytelna).
+fun alertColors(tone: AlertTone, colors: ColorScheme): AlertColors = when (tone) {
+    AlertTone.Info -> AlertColors(colors.primaryContainer, colors.primary, colors.onSurface)
+    AlertTone.Warning -> AlertColors(WarningContainer, Warning, TextColor)
+    AlertTone.Error -> AlertColors(ErrorContainer, Error, TextColor)
+    AlertTone.Success -> AlertColors(SuccessContainer, Success, TextColor)
+}
+
 @Composable
 fun AppAlert(title: String, message: String?, tone: AlertTone, modifier: Modifier = Modifier, designIcons: Boolean = false) {
-    val colors = MaterialTheme.colorScheme
-    val (container, content, icon) = when (tone) {
-        AlertTone.Info -> Triple(colors.primaryContainer, colors.primary, Icons.Outlined.Info)
-        AlertTone.Warning -> Triple(WarningContainer, Warning, Icons.Outlined.WarningAmber)
-        AlertTone.Error -> Triple(ErrorContainer, colors.error, Icons.Outlined.ErrorOutline)
-        AlertTone.Success -> Triple(SuccessContainer, Success, Icons.Outlined.CheckCircle)
+    val (container, content, messageColor) = alertColors(tone, MaterialTheme.colorScheme)
+    val icon = when (tone) {
+        AlertTone.Info -> Icons.Outlined.Info
+        AlertTone.Warning -> Icons.Outlined.WarningAmber
+        AlertTone.Error -> Icons.Outlined.ErrorOutline
+        AlertTone.Success -> Icons.Outlined.CheckCircle
     }
     // Komunikat jest jednym węzłem TalkBack i regionem na żywo: pojawienie się lub zmiana treści zostanie odczytana
     // (błąd natychmiast, reszta po bieżącej wypowiedzi). Ikona nazywa ton, który inaczej widać tylko kolorem.
@@ -208,7 +234,7 @@ fun AppAlert(title: String, message: String?, tone: AlertTone, modifier: Modifie
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.labelLarge, color = content)
                 if (message != null) {
-                    Text(message, style = MaterialTheme.typography.bodyMedium, color = if (designIcons) content else colors.onSurface)
+                    Text(message, style = MaterialTheme.typography.bodyMedium, color = if (designIcons) content else messageColor)
                 }
             }
         }

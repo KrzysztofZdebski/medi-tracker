@@ -84,6 +84,36 @@ class MedicationsScreenTest {
         compose.onNodeWithText("Usunięto Metformina").assertIsDisplayed()
     }
 
+    // Błąd z telefonu: stan przesunięcia był zapamiętany pod kluczem karty, więc przywrócona karta od razu znikała znowu
+    @Test fun undoAfterSwipeKeepsMedicationOnTheList() {
+        showList()
+        compose.onNodeWithText("Metformina").performTouchInput { swipeLeft() }
+        compose.waitForIdle()
+        compose.onNodeWithText("Cofnij").performClick()
+        compose.waitForIdle()
+        assertEquals(meds, repository.medications.value)
+        compose.onNodeWithText("Metformina").assertIsDisplayed()
+        compose.onAllNodesWithText("Usunięto Metformina").assertCountEquals(0)
+
+        // ta sama karta da się usunąć i przywrócić drugi raz
+        compose.onNodeWithText("Metformina").performTouchInput { swipeLeft() }
+        compose.waitForIdle()
+        compose.onNodeWithText("Cofnij").performClick()
+        compose.waitForIdle()
+        assertEquals(meds, repository.medications.value)
+    }
+
+    // wolne przeciągnięcie o kawałek karty (np. przy przewijaniu) nie usuwa leku
+    @Test fun shortSlowDragDoesNotRemoveMedication() {
+        showList()
+        compose.onNodeWithText("Metformina").performTouchInput {
+            swipeLeft(startX = right - 10f, endX = right - 10f - width * 0.25f, durationMillis = 800)
+        }
+        compose.waitForIdle()
+        assertEquals(3, names().size)
+        compose.onAllNodesWithText("Usunięto Metformina").assertCountEquals(0)
+    }
+
     @Test fun longPressSelectsCardsAndBackLeavesSelectionMode() {
         showList()
         compose.onNodeWithText("Metformina").performTouchInput { longClick() }

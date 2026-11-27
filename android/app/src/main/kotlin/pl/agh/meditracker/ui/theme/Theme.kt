@@ -38,6 +38,9 @@ private val colors = lightColorScheme(
     primaryContainer = PrimaryContainer,
     onPrimaryContainer = OnPrimaryContainer,
     secondary = Color(0xFF4D635B),
+    // tło zaznaczonej karty leku; bez tego Material bierze domyślny fiolet
+    secondaryContainer = Color(0xFFCDE8DE),
+    onSecondaryContainer = OnPrimaryContainer,
     background = Background,
     onBackground = TextColor,
     surface = Color.White,
@@ -56,7 +59,9 @@ private val colors = lightColorScheme(
 private val darkColors = darkColorScheme(
     primary = Color(0xFF95D5BE), onPrimary = Color(0xFF00382B),
     primaryContainer = Color(0xFF185142), onPrimaryContainer = Color(0xFFD5EDE4),
-    secondary = Color(0xFFB2CCC0), background = Color(0xFF101A16), onBackground = Color(0xFFE0EAE3),
+    secondary = Color(0xFFB2CCC0),
+    secondaryContainer = Color(0xFF244A3F), onSecondaryContainer = Color(0xFFD5EDE4),
+    background = Color(0xFF101A16), onBackground = Color(0xFFE0EAE3),
     surface = Color(0xFF18241E), onSurface = Color(0xFFE0EAE3),
     surfaceContainer = Color(0xFF223029), surfaceContainerLow = Color(0xFF18241E),
     surfaceContainerHigh = Color(0xFF29382F), surfaceContainerHighest = Color(0xFF304137),

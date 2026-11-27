@@ -43,6 +43,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import pl.agh.meditracker.model.DoseStatus
@@ -115,7 +118,14 @@ fun AppBottomBar(selectedIndex: Int, modifier: Modifier = Modifier, designIcons:
                 onClick = { onSelect(index) },
                 // ikona ozdobna: element ma podpis (label), a stan „wybrane” ustawia NavigationBarItem
                 icon = { if (designIcons) DesignIcon(resources[index], 24.dp, tint = if (selectedIndex == index) colors.onPrimaryContainer else colors.onSurfaceVariant) else Icon(icon, contentDescription = null) },
-                label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+                // Podpis rośnie z czcionką systemu najwyżej do 130%: przy 200% „Ustawienia” łamało się i wychodziło
+                // poza pasek. TalkBack i tak czyta pełną nazwę, a pozostały tekst aplikacji skaluje się bez limitu.
+                label = {
+                    val density = LocalDensity.current
+                    CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale.coerceAtMost(1.3f))) {
+                        Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+                    }
+                },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = colors.onPrimaryContainer,
                     selectedTextColor = colors.onSurface,

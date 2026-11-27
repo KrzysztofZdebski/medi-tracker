@@ -67,6 +67,12 @@ class CalendarReconciler(private val gateway: CalendarGateway, initial: Calendar
         }
     }
 
+    // zapomina wydarzenia z kalendarza, którego już nie ma (zniknęły razem z nim)
+    fun forgetMissingCalendar() {
+        val id = state.calendarId ?: return
+        if (!gateway.calendarExists(id)) state = CalendarSyncState()
+    }
+
     // usuwa wszystko, co aplikacja dodała do kalendarza
     fun removeAll() {
         for ((key, entry) in state.events) deleteEntry(key, entry)

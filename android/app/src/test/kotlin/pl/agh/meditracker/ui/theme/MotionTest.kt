@@ -97,8 +97,12 @@ class MotionTest {
         compose.onNodeWithText("Alert").assertExists()
         compose.mainClock.autoAdvance = false
         compose.runOnUiThread { visible = false }
-        // wyjście trwa 150 ms; po 100 ms bez ograniczenia ruchu alert wciąż jest w drzewie
-        compose.mainClock.advanceTimeBy(100)
+        // wyjście trwa 150 ms; po ~100 ms (6 klatek) bez ograniczenia ruchu alert wciąż jest w drzewie.
+        // Klatka po klatce z waitForIdle: AnimatedVisibility kończy przejście w efekcie po kolejnej klatce.
+        repeat(6) {
+            compose.mainClock.advanceTimeByFrame()
+            compose.waitForIdle()
+        }
         return compose.onAllNodesWithText("Alert").fetchSemanticsNodes().isNotEmpty()
     }
 }

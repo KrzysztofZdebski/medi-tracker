@@ -87,6 +87,7 @@ class CalendarScreensTest {
         compose.onNodeWithText("Brak dostępu do kalendarza").assertDoesNotExist()
         compose.onNodeWithText("Dodawaj dawki do kalendarza").assertIsOff().performClick()
         compose.onNodeWithText("Dodawaj dawki do kalendarza").assertIsOn()
+        compose.onNodeWithText("Kalendarz docelowy").assert(SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Heading))
         compose.onNodeWithText("mediTracker").assertIsSelected()
         compose.onNodeWithText("Praca").performScrollTo().performClick()
         assertEquals(7L, selected)

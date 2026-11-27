@@ -159,7 +159,8 @@ class MedicationRepository(
         var restored = emptyList<Medication>()
         core.update { c ->
             val present = c.medications.map { it.id }.toSet()
-            val back = c.removed.values.filter { it.medication.id in wanted && it.medication.id !in present }
+            // od ostatnio usuniętego: każde przywrócenie odwraca jedno usunięcie, więc [before] wskazuje właściwe miejsce
+            val back = c.removed.values.filter { it.medication.id in wanted && it.medication.id !in present }.reversed()
             restored = back.map { it.medication }
             val meds = c.medications.toMutableList()
             back.forEach { r ->

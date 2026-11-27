@@ -102,7 +102,7 @@ fun HistoryCard(entries: List<HistoryEntry>) {
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("${formatTime(entry.time)} · ${entry.medication.name}", style = MaterialTheme.typography.bodyLarge)
-                        Text("${entry.medication.unit.format(entry.medication.schedule.doseQty)} · ${style.label}", style = MaterialTheme.typography.bodyMedium, color = style.content)
+                        Text("${entry.medication.unit.format(entry.medication.schedule.doseQty)} · ${style.label}", style = MaterialTheme.typography.bodyMedium, color = statusTextColor(entry.status, colors))
                     }
                 }
                 if (entries.size == 1) {

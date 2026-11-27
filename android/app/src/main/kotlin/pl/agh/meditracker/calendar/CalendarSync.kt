@@ -69,13 +69,17 @@ class CalendarSync(
             return
         }
         guarded(state) {
+            // kalendarz z mapowania zniknął (usunięte konto, kalendarz skasowany poza aplikacją): jego wydarzeń już nie ma,
+            // a zapisane id mogłyby wskazywać na nowy kalendarz o tym samym numerze i blokować dodanie wydarzeń
+            forgetMissingCalendar()
             val calendarId = target(input.calendarId) ?: run {
                 Log.w(TAG, "Nie udało się utworzyć kalendarza")
                 return@guarded
             }
             sync(calendarId, input.events, ZonedDateTime.now(clock))
-            // po przejściu na kalendarz użytkownika pusty kalendarz „mediTracker” nie jest już potrzebny
-            if (input.calendarId != null && gateway.findLocalCalendar() != null) gateway.deleteLocalCalendar()
+            // po przejściu na kalendarz użytkownika pusty kalendarz „mediTracker” nie jest już potrzebny; tylko gdy
+            // faktycznie użyto wybranego kalendarza, bo gdy go zabrakło, „mediTracker” jest właśnie kalendarzem docelowym
+            if (calendarId == input.calendarId && gateway.findLocalCalendar() != null) gateway.deleteLocalCalendar()
         }
     }
 
