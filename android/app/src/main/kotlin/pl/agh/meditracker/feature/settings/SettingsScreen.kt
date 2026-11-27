@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,6 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -43,16 +47,18 @@ fun rememberNotificationAccess(refreshKey: Any? = null): NotificationAccess {
 }
 
 @Composable
-fun SettingsScreen(onAccount: (AccountState) -> Unit, onNotifications: () -> Unit, onAbout: () -> Unit) {
+fun SettingsScreen(onAccount: (AccountState) -> Unit, onNotifications: () -> Unit, onCalendar: () -> Unit, onAbout: () -> Unit) {
     val context = LocalContext.current
     val container = (context.applicationContext as MediTrackerApp).container
     val settings = container.settings
     val preferences by settings.state.collectAsStateWithLifecycle()
+    val calendar by settings.calendar.collectAsStateWithLifecycle()
     val accountState by container.account.state.collectAsStateWithLifecycle()
     val access = rememberNotificationAccess()
     SettingsContent(preferences, access, appVersion(context), accountState, { onAccount(accountState) }, onNotifications,
         onSound = { NotificationController(context).openSettings(channel = true) },
         onAbout = onAbout, onSnooze = { settings.snoozeMinutes = it }, onTheme = { settings.theme = it },
+        calendarEnabled = calendar.enabled, onCalendar = onCalendar,
         banner = { SyncConflictBanner(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) })
 }
 
@@ -62,6 +68,7 @@ fun SettingsContent(
     accountState: AccountState, onAccount: () -> Unit,
     onNotifications: () -> Unit, onSound: () -> Unit, onAbout: () -> Unit,
     onSnooze: (Int) -> Unit, onTheme: (AppTheme) -> Unit,
+    calendarEnabled: Boolean = false, onCalendar: () -> Unit = {},
     banner: @Composable () -> Unit = {},
 ) {
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
@@ -78,15 +85,17 @@ fun SettingsContent(
                     else -> AccountRow("Zaloguj się lub utwórz konto", "Kopia leków i historii na Twoim koncie", onAccount)
                 }
             }
-            Text("Przypomnienia", style = MaterialTheme.typography.titleMedium, color = colors.onBackground)
+            Text("Przypomnienia", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium, color = colors.onBackground)
             SettingsCard {
                 SettingRow(R.raw.design_bell_24, "Powiadomienia", when { !access.allowed -> "Zablokowane w Androidzie"; preferences.remindersEnabled -> "Włączone"; else -> "Wyłączone" }, onNotifications)
                 SettingRow(R.raw.design_clock_24, "Przypomnij później", "Domyślnie ${preferences.snoozeMinutes} minut", { sheet = "snooze" })
                 SettingRow(R.raw.design_volume_24, "Dźwięk i wibracje", access.soundSummary, onSound)
+                SettingRowLayout({ Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
+                    "Kalendarz", if (calendarEnabled) "Dawki w kalendarzu telefonu" else "Wyłączony", onCalendar)
             }
-            Text("Wygląd", style = MaterialTheme.typography.titleMedium, color = colors.onBackground)
+            Text("Wygląd", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium, color = colors.onBackground)
             SettingsCard { SettingRow(R.raw.design_moon_24, "Motyw aplikacji", preferences.theme.label, { sheet = "theme" }) }
-            Text("O aplikacji", style = MaterialTheme.typography.titleMedium, color = colors.onBackground)
+            Text("O aplikacji", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium, color = colors.onBackground)
             SettingsCard { SettingRow(R.raw.design_info_24, "Informacje o aplikacji", "mediTracker · wersja $version", onAbout) }
             Caption("Leki i historia są zapisane lokalnie na tym urządzeniu.")
         }
@@ -117,7 +126,8 @@ private fun SettingRow(@RawRes icon: Int, title: String, subtitle: String, onCli
 @Composable
 private fun SettingRowLayout(icon: @Composable () -> Unit, title: String, subtitle: String, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Surface(onClick, color = colors.surface) {
+    // wiersz to jeden przycisk (Surface z onClick scala tytuł i opis); ikony i strzałka są ozdobne
+    Surface(onClick, Modifier.semantics { role = Role.Button }, color = colors.surface) {
         Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(horizontal = 12.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             icon()
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {

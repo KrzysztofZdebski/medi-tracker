@@ -1,5 +1,6 @@
 package pl.agh.meditracker.feature.today
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -30,6 +31,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,6 +51,8 @@ import pl.agh.meditracker.core.MediTrackerApp
 import androidx.compose.ui.platform.LocalContext
 import pl.agh.meditracker.feature.settings.SyncConflictBanner
 import pl.agh.meditracker.feature.settings.rememberNotificationAccess
+import pl.agh.meditracker.ui.theme.AppMotion
+import pl.agh.meditracker.ui.theme.itemMotion
 
 @Composable
 fun TodayScreen(onAddMedication: () -> Unit, onOpenHistory: () -> Unit, onNotifications: () -> Unit, onOpenMedication: (String) -> Unit) {
@@ -82,6 +87,7 @@ fun TodayScreen(onAddMedication: () -> Unit, onOpenHistory: () -> Unit, onNotifi
                 onOpenHistory = onOpenHistory,
                 onOpen = { dose -> if (dose.status == DoseStatus.Pending || dose.status == DoseStatus.Snoozed) viewModel.open(dose) else onOpenMedication(dose.medication.id) },
                 onTake = viewModel::take,
+                onSkip = viewModel::skip,
                 modifier = Modifier.weight(1f),
                 remindersEnabled = preferences.remindersEnabled && notificationAccess.allowed,
             )
@@ -109,10 +115,13 @@ fun TodayContent(
     onTake: (Dose) -> Unit,
     modifier: Modifier = Modifier,
     remindersEnabled: Boolean = false,
+    // akcja „Pomiń dawkę” na karcie dla TalkBack; bez niej pominięcie jest dostępne w arkuszu dawki
+    onSkip: ((Dose) -> Unit)? = null,
 ) {
     if (state.loading) return
     val next = state.next
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val motion = AppMotion.current
     LazyColumn(
         modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp),
@@ -123,25 +132,36 @@ fun TodayContent(
             item { EmptyToday(onAddMedication) }
             return@LazyColumn
         }
-        item {
-            when (val feedback = state.feedback) {
-                is TodayFeedback.Taken -> AppAlert(
-                    "Dawka zapisana",
-                    "Zapas: ${feedback.stockBefore} → ${feedback.dose.medication.unit.format(feedback.stockAfter)}. Wpis dodano do historii.",
-                    AlertTone.Success,
-                )
-                is TodayFeedback.Skipped -> AppAlert(
-                    "Dawka pominięta",
-                    "Zapas bez zmian: ${feedback.dose.medication.let { it.unit.format(it.stock) }}. Zapisano w historii.",
-                    AlertTone.Info,
-                )
-                is TodayFeedback.Snoozed -> AppAlert("Dawka odroczona", if (remindersEnabled) "Przypomnienie za ${feedback.minutes} minut. Zapas bez zmian." else "Dawka została odroczona. Włącz powiadomienia pod ikoną dzwonka, aby otrzymać przypomnienie.", AlertTone.Info)
-                null -> if (next != null) NextDoseCard(next, state)
+        // karta najbliższej dawki albo komunikat po akcji; przenikanie przy każdej zmianie, rozmiar przeskakuje,
+        // a karty dawek poniżej przesuwają się płynnie dzięki animateItem
+        item(key = "hero") {
+            AnimatedContent(
+                targetState = state.feedback ?: next,
+                modifier = itemMotion(motion),
+                transitionSpec = { motion.crossfade(animateSize = false) },
+                contentKey = { hero -> if (hero is Dose) "dose-${hero.medication.id}-${hero.dueAt}" else hero },
+                label = "najbliższaDawka",
+            ) { hero ->
+                when (hero) {
+                    is TodayFeedback.Taken -> AppAlert(
+                        "Dawka zapisana",
+                        "Zapas: ${hero.stockBefore} → ${hero.dose.medication.unit.format(hero.stockAfter)}. Wpis dodano do historii.",
+                        AlertTone.Success,
+                    )
+                    is TodayFeedback.Skipped -> AppAlert(
+                        "Dawka pominięta",
+                        "Zapas bez zmian: ${hero.dose.medication.let { it.unit.format(it.stock) }}. Zapisano w historii.",
+                        AlertTone.Info,
+                    )
+                    is TodayFeedback.Snoozed -> AppAlert("Dawka odroczona", if (remindersEnabled) "Przypomnienie za ${hero.minutes} minut. Zapas bez zmian." else "Dawka została odroczona. Włącz powiadomienia pod ikoną dzwonka, aby otrzymać przypomnienie.", AlertTone.Info)
+                    is Dose -> NextDoseCard(hero, state)
+                    else -> Unit
+                }
             }
         }
-        item { Text("Dzisiejsze leki", style = MaterialTheme.typography.titleMedium) }
+        item(key = "title") { Text("Dzisiejsze leki", itemMotion(motion, Modifier.semantics { heading() }), style = MaterialTheme.typography.titleMedium) }
         if (state.doses.isEmpty()) {
-            item { Text("Na dziś nie zaplanowano żadnych dawek.", style = MaterialTheme.typography.bodyLarge, color = muted) }
+            item(key = "no-doses") { Text("Na dziś nie zaplanowano żadnych dawek.", itemMotion(motion), style = MaterialTheme.typography.bodyLarge, color = muted) }
         }
         items(state.doses, key = { "${it.medication.id}-${it.time}" }) { dose ->
             val med = dose.medication
@@ -156,20 +176,24 @@ fun TodayContent(
                 details = "${med.strength} · ${med.unit.format(med.schedule.doseQty)}",
                 status = dose.status,
                 onTake = { onTake(dose) },
+                modifier = itemMotion(motion),
                 onClick = { onOpen(dose) },
                 highlighted = dose == next,
+                // ta sama rozbieżność co w onOpen: otwarta dawka otwiera arkusz, zamknięta szczegóły leku
+                onClickLabel = if (dose.status == DoseStatus.Pending || dose.status == DoseStatus.Snoozed) "otworzyć opcje dawki" else "otworzyć szczegóły leku",
+                onSkip = onSkip?.let { skip -> { skip(dose) } },
             )
         }
         if (state.feedback != null) {
-            item { SecondaryButton("Zobacz historię", onOpenHistory) }
+            item(key = "history-button") { SecondaryButton("Zobacz historię", onOpenHistory, itemMotion(motion)) }
         } else {
-            item {
+            item(key = "reminders-note") {
                 Text(
                     if (remindersEnabled) "Przypomnienia są włączone." else "Przypomnienia są wyłączone. Włącz je pod ikoną dzwonka.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = muted,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = itemMotion(motion, Modifier.fillMaxWidth()),
                 )
             }
         }
@@ -180,7 +204,8 @@ fun TodayContent(
 private fun NextDoseCard(dose: Dose, state: TodayUiState) {
     val colors = MaterialTheme.colorScheme
     val med = dose.medication
-    Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = colors.primaryContainer) {
+    // karta informacyjna czytana jednym ciągiem; ikona zegara jest ozdobna, bo obok jest podpis
+    Surface(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}, shape = MaterialTheme.shapes.large, color = colors.primaryContainer) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Schedule, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))

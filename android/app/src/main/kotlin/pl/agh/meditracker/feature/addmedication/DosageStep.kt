@@ -14,6 +14,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import pl.agh.meditracker.ui.components.AppTextField
 import pl.agh.meditracker.ui.components.DaySelector
@@ -45,7 +50,7 @@ fun DosageStep(state: AddMedicationUiState, viewModel: AddMedicationViewModel) {
         )
         Text("Dni przyjmowania", style = typography.bodyLarge)
         DaySelector(state.days, viewModel::toggleDay)
-        Text("Godziny", style = typography.titleMedium)
+        Text("Godziny", Modifier.semantics { heading() }, style = typography.titleMedium)
         if (state.times.isEmpty()) {
             AppTextField(
                 value = "Nie wybrano",
@@ -60,7 +65,8 @@ fun DosageStep(state: AddMedicationUiState, viewModel: AddMedicationViewModel) {
                     TimeChip(formatTime(time), { viewModel.editTime(index) }, onEdit = { viewModel.editTime(index) }, designIcons = state.editingId != null)
                 }
             }
-            state.scheduleError?.let { Text(it, style = typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+            // błąd walidacji ogłaszany od razu po próbie przejścia dalej
+            state.scheduleError?.let { Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Assertive }, style = typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
         }
         SecondaryButton("+ Dodaj godzinę", { viewModel.editTime(null) })
         AppTextField(

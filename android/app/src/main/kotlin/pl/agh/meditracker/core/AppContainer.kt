@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import pl.agh.meditracker.BuildConfig
+import pl.agh.meditracker.calendar.CalendarSync
 import pl.agh.meditracker.data.account.AccountRepository
 import pl.agh.meditracker.data.account.AccountStore
 import pl.agh.meditracker.data.account.KdfBounds
@@ -49,6 +50,7 @@ class AppContainer(
     val settings = SettingsStore(context)
     val reminders = ReminderScheduler(context, medications, settings)
     val widgets = TodayWidgetUpdater(context, medications)
+    val calendar = CalendarSync(context, medications, settings)
 
     // konstrukcja bez sieci; Keystore dopiero przy pierwszym odczycie lub zapisie sekretu
     private val accountStore = AccountStore(context.getSharedPreferences("account", Context.MODE_PRIVATE), secretBox)
@@ -71,6 +73,7 @@ open class MediTrackerApp : Application() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         container.reminders.start(scope)
         container.widgets.start(scope)
+        container.calendar.start(scope)
         container.backup.start()
         scope.launch { runCatching { container.catalog.sync() } }
     }

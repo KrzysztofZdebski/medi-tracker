@@ -24,6 +24,7 @@ import pl.agh.meditracker.data.account.api.ApiResult
 import pl.agh.meditracker.feature.account.RestoreChoiceSheet
 import pl.agh.meditracker.ui.components.AlertTone
 import pl.agh.meditracker.ui.components.AppAlert
+import pl.agh.meditracker.ui.theme.MotionVisibility
 
 /**
  * Wybór po konflikcie 409 (spec §6.3.3): to samo pytanie co po logowaniu, ale bez blokowania. Jeden egzemplarz na
@@ -89,7 +90,7 @@ class ConflictChoiceViewModel(private val backup: BackupSync) : ViewModel() {
 fun SyncConflictBanner(modifier: Modifier = Modifier) {
     val viewModel = appViewModel(activityViewModelOwner()) { ConflictChoiceViewModel(it.backup) }
     val status by viewModel.status.collectAsState()
-    if (status is SyncStatus.Conflict) SyncConflictBannerContent(modifier, viewModel::open)
+    MotionVisibility(status is SyncStatus.Conflict, modifier) { SyncConflictBannerContent(onOpen = viewModel::open) }
 }
 
 @Composable

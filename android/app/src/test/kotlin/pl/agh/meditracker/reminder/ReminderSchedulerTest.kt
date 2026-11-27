@@ -100,6 +100,11 @@ class ReminderSchedulerTest {
         repository.remove(med.id)
         runCurrent()
         assertTrue(scheduled().isEmpty())
+
+        // „Cofnij” przywraca też przypomnienia
+        repository.restore(med.id)
+        runCurrent()
+        assertEquals(4, scheduled().size)
     }
 }
 

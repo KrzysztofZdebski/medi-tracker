@@ -1,5 +1,6 @@
 package pl.agh.meditracker.ui.components
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -39,11 +40,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import pl.agh.meditracker.model.DoseStatus
+import pl.agh.meditracker.ui.theme.AppMotion
 import pl.agh.meditracker.ui.theme.MediTrackerTheme
+import pl.agh.meditracker.ui.theme.MotionDuration
+import pl.agh.meditracker.ui.theme.MotionEasing
 import java.time.DayOfWeek
 import pl.agh.meditracker.R
 
@@ -59,7 +68,8 @@ fun AppTopBar(
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     TopAppBar(
-        title = { Text(title, style = if (largeTitle) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        // tytuł ekranu jest nagłówkiem, więc TalkBack pozwala przeskakiwać do niego gestem nawigacji po nagłówkach
+        title = { Text(title, Modifier.semantics { heading() }, style = if (largeTitle) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         expandedHeight = if (designIcons) 72.dp else 64.dp,
         modifier = modifier,
         navigationIcon = {
@@ -106,8 +116,16 @@ fun AppBottomBar(selectedIndex: Int, modifier: Modifier = Modifier, designIcons:
             NavigationBarItem(
                 selected = index == selectedIndex,
                 onClick = { onSelect(index) },
+                // ikona ozdobna: element ma podpis (label), a stan „wybrane” ustawia NavigationBarItem
                 icon = { if (designIcons) DesignIcon(resources[index], 24.dp, tint = if (selectedIndex == index) colors.onPrimaryContainer else colors.onSurfaceVariant) else Icon(icon, contentDescription = null) },
-                label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+                // Podpis rośnie z czcionką systemu najwyżej do 130%: przy 200% „Ustawienia” łamało się i wychodziło
+                // poza pasek. TalkBack i tak czyta pełną nazwę, a pozostały tekst aplikacji skaluje się bez limitu.
+                label = {
+                    val density = LocalDensity.current
+                    CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale.coerceAtMost(1.3f))) {
+                        Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+                    }
+                },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = colors.onPrimaryContainer,
                     selectedTextColor = colors.onSurface,
@@ -156,12 +174,14 @@ fun AppBottomSheet(
         Column(
             Modifier
                 .fillMaxWidth()
+                // treść arkusza zmienia się w miejscu (np. Dzisiaj: potwierdzenie → odroczenie), wysokość dopasowuje się płynnie
+                .animateContentSize(AppMotion.current.spec(MotionDuration.Medium, MotionEasing.Emphasized))
                 .verticalScroll(rememberScrollState())
                 .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (icon != null) IconBadge(icon, size = 56.dp)
-            if (title != null) Text(title, style = MaterialTheme.typography.titleLarge)
+            if (title != null) Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
             content()
         }
     }
@@ -196,7 +216,7 @@ fun AppDialog(
             }
         },
         icon = icon?.let { { IconBadge(it) } },
-        title = { Text(title, style = MaterialTheme.typography.titleLarge) },
+        title = { Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge) },
         text = { Text(message, style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant) },
         shape = MaterialTheme.shapes.extraLarge,
         containerColor = colors.surface,

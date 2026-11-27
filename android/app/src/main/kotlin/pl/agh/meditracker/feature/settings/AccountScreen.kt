@@ -24,6 +24,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import pl.agh.meditracker.core.MediTrackerApp
 import pl.agh.meditracker.core.appViewModel
@@ -109,6 +112,7 @@ fun AccountContent(
                 Text("ADRES E-MAIL", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                 Text(email, style = MaterialTheme.typography.titleLarge)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // ozdobna: obok jest tekst „Adres potwierdzony”
                     Icon(Icons.Outlined.Check, null, Modifier.size(20.dp), tint = colors.primary)
                     Text("Adres potwierdzony", style = MaterialTheme.typography.bodyMedium, color = colors.primary)
                 }
@@ -142,7 +146,8 @@ private fun BackupStatus(status: SyncStatus, zone: ZoneId, onRetry: () -> Unit, 
         SyncStatus.Failed -> "Nie udało się wysłać kopii. Spróbujemy ponownie."
         SyncStatus.Conflict -> "Konto jest używane na innym urządzeniu"
     }
-    Text(text, style = MaterialTheme.typography.bodyMedium, color = if (status is SyncStatus.Conflict) colors.error else colors.onSurfaceVariant)
+    // stan kopii zmienia się w tle (wysyłanie, błąd), więc jest regionem na żywo
+    Text(text, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium, color = if (status is SyncStatus.Conflict) colors.error else colors.onSurfaceVariant)
     when (status) {
         SyncStatus.Failed -> AppTextButton("Spróbuj teraz", onRetry)
         SyncStatus.Conflict -> AppTextButton("Wybierz dane", onConflict)

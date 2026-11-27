@@ -2,10 +2,12 @@ package pl.agh.meditracker.feature.medications
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import pl.agh.meditracker.data.repository.MedicationRepository
 import pl.agh.meditracker.model.Medication
 import pl.agh.meditracker.model.Schedule
@@ -23,14 +25,75 @@ data class MedicationItem(
     val daysText: String?,
 )
 
-data class MedicationsUiState(val loading: Boolean = true, val items: List<MedicationItem> = emptyList()) {
-    val countText get() = "${items.size} ${medicationsWord(items.size)} w Twojej apteczce"
+// Usunięcie czekające na „Cofnij” w snackbarze. Kolejne usunięcie, zanim snackbar zniknie, dołącza do tego samego
+// komunikatu, więc „Cofnij” zawsze przywraca wszystko, co zniknęło od ostatniego potwierdzenia.
+data class RemovalNotice(val ids: List<String>, val names: List<String>) {
+    val message get() = if (names.size == 1) "Usunięto ${names.single()}" else "Usunięto ${names.size} ${medicationsWord(names.size)}"
 }
 
-class MedicationsViewModel(repository: MedicationRepository) : ViewModel() {
-    val uiState: StateFlow<MedicationsUiState> = repository.medications
-        .map { meds -> MedicationsUiState(loading = false, items = meds.map { it.toItem() }) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MedicationsUiState())
+data class MedicationsUiState(
+    val loading: Boolean = true,
+    val items: List<MedicationItem> = emptyList(),
+    // zaznaczone karty; niepusty zbiór = tryb zaznaczania
+    val selected: Set<String> = emptySet(),
+    val removal: RemovalNotice? = null,
+    // rośnie po każdym „Cofnij”: karta przywrócona w trakcie animacji znikania wraca na miejsce po przesunięciu
+    val restoreCount: Int = 0,
+) {
+    val countText get() = "${items.size} ${medicationsWord(items.size)} w Twojej apteczce"
+    val selecting get() = selected.isNotEmpty()
+}
+
+class MedicationsViewModel(private val repository: MedicationRepository) : ViewModel() {
+    private val selected = MutableStateFlow<Set<String>>(emptySet())
+    private val removal = MutableStateFlow<RemovalNotice?>(null)
+    private val restoreCount = MutableStateFlow(0)
+
+    val uiState: StateFlow<MedicationsUiState> = combine(repository.medications, selected, removal, restoreCount) { meds, selected, removal, restores ->
+        val ids = meds.map { it.id }.toSet()
+        MedicationsUiState(loading = false, items = meds.map { it.toItem() }, selected = selected intersect ids, removal = removal, restoreCount = restores)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MedicationsUiState())
+
+    // długie przytrzymanie karty i dotknięcia w trybie zaznaczania
+    fun toggle(id: String) = selected.update { if (id in it) it - id else it + id }
+
+    fun selectAll() {
+        selected.value = repository.medications.value.map { it.id }.toSet()
+    }
+
+    fun clearSelection() {
+        selected.value = emptySet()
+    }
+
+    // przesunięcie karty albo akcja ułatwień dostępu „Usuń”
+    fun remove(id: String) = notify(repository.removeAll(listOf(id)))
+
+    fun removeSelected() {
+        val ids = selected.value
+        selected.value = emptySet()
+        notify(repository.removeAll(ids))
+    }
+
+    // lek usunięty na ekranie szczegółów: ten sam snackbar z „Cofnij” po powrocie na listę
+    fun showRemoved(ids: List<String>) = notify(repository.recentlyRemoved(ids))
+
+    fun undo(notice: RemovalNotice) {
+        repository.restoreAll(notice.ids)
+        restoreCount.update { it + 1 }
+        clearRemoval(notice)
+    }
+
+    // snackbar zniknął bez „Cofnij” albo ekran opuścił kompozycję: usunięcie zostaje
+    fun clearRemoval(notice: RemovalNotice) = removal.update { if (it == notice) null else it }
+
+    private fun notify(removed: List<Medication>) {
+        if (removed.isEmpty()) return
+        removal.update { old ->
+            val known = old?.ids.orEmpty().toSet()
+            val fresh = removed.filter { it.id !in known }
+            RemovalNotice(old?.ids.orEmpty() + fresh.map { it.id }, old?.names.orEmpty() + fresh.map { it.name })
+        }
+    }
 }
 
 private val dayLabels = listOf("Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd")

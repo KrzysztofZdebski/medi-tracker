@@ -1,8 +1,15 @@
 package pl.agh.meditracker.feature.addmedication
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import pl.agh.meditracker.core.appViewModel
@@ -23,6 +31,10 @@ import pl.agh.meditracker.ui.components.DestructiveButton
 import pl.agh.meditracker.ui.components.PrimaryButton
 import pl.agh.meditracker.ui.components.AppTopBar
 import pl.agh.meditracker.feature.scanner.ScannerFlow
+import pl.agh.meditracker.ui.theme.AppMotion
+import pl.agh.meditracker.ui.theme.MotionDuration
+import pl.agh.meditracker.ui.theme.MotionEasing
+import pl.agh.meditracker.ui.theme.MotionPresence
 
 @Composable
 fun AddMedicationScreen(onClose: () -> Unit, onSaved: () -> Unit, medicationId: String? = null, editSchedule: Boolean = false) {
@@ -45,21 +57,58 @@ fun AddMedicationContent(state: AddMedicationUiState, viewModel: AddMedicationVi
         ScannerFlow(state, viewModel)
         return
     }
+    val motion = AppMotion.current
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         AppTopBar(title(state), onBack = viewModel::back, designIcons = state.editingId != null)
-        when (state.step) {
-            Step.Method -> MethodStep(viewModel)
-            Step.Found -> FoundStep(state, viewModel)
-            Step.Details -> DetailsStep(state, viewModel)
-            Step.Dosage -> DosageStep(state, viewModel)
-            Step.Stock -> StockStep(state, viewModel)
-            Step.Time -> TimeStep(state, viewModel)
-            Step.Date -> DateStep(state, viewModel)
-            else -> Unit
+        StepProgress(state)
+        // głębokość historii mówi, czy idziemy dalej (wjazd z prawej), czy wracamy (z lewej)
+        AnimatedContent(
+            targetState = StepPage(state.step, state.history.size),
+            modifier = Modifier.weight(1f),
+            transitionSpec = { motion.sharedAxis(forward = targetState.depth >= initialState.depth) },
+            label = "krokDodawania",
+        ) { page ->
+            when (page.step) {
+                Step.Method -> MethodStep(viewModel)
+                Step.Found -> FoundStep(state, viewModel)
+                Step.Details -> DetailsStep(state, viewModel)
+                Step.Dosage -> DosageStep(state, viewModel)
+                Step.Stock -> StockStep(state, viewModel)
+                Step.Time -> TimeStep(state, viewModel)
+                Step.Date -> DateStep(state, viewModel)
+                else -> Unit
+            }
         }
     }
     if (state.discardDialog) {
         DiscardSheet(onContinue = viewModel::dismissDiscard, onDiscard = viewModel::discard)
+    }
+}
+
+private data class StepPage(val step: Step, val depth: Int)
+
+/** Pasek „Krok 1 z 2” / „Krok 2 z 2” przy dodawaniu (bez edycji); wypełnia się płynnie między krokami. */
+@Composable
+private fun StepProgress(state: AddMedicationUiState) {
+    val progress = when (state.step) {
+        Step.Dosage, Step.Time, Step.Date -> 0.5f
+        Step.Stock -> 1f
+        else -> null
+    }.takeIf { state.editingId == null }
+    val motion = AppMotion.current
+    val colors = MaterialTheme.colorScheme
+    MotionPresence(progress) { target ->
+        val fill by animateFloatAsState(target, motion.spec(MotionDuration.Long, MotionEasing.Emphasized), label = "postępKroków")
+        Box(
+            Modifier
+                .padding(horizontal = 20.dp)
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(CircleShape)
+                .background(colors.surfaceContainer),
+        ) {
+            Box(Modifier.fillMaxWidth(fill).fillMaxHeight().clip(CircleShape).background(colors.primary))
+        }
     }
 }
 

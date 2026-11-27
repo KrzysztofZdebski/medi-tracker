@@ -1,5 +1,7 @@
 package pl.agh.meditracker.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -21,19 +24,34 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import pl.agh.meditracker.model.DoseStatus
+import pl.agh.meditracker.ui.theme.AppMotion
+import pl.agh.meditracker.ui.theme.Error
 import pl.agh.meditracker.ui.theme.ErrorContainer
+import pl.agh.meditracker.ui.theme.TextColor
+import pl.agh.meditracker.ui.theme.MotionDuration
+import pl.agh.meditracker.ui.theme.MotionEasing
 import pl.agh.meditracker.ui.theme.Line
 import pl.agh.meditracker.ui.theme.Success
 import pl.agh.meditracker.ui.theme.SuccessContainer
@@ -58,6 +76,31 @@ internal fun statusStyle(status: DoseStatus): StatusStyle {
     }
 }
 
+private val SuccessOnDark = Color(0xFF8FD3A6)
+
+/** Kolor podpisu stanu dawki stojącego na tle karty (np. wpis w historii), a nie na tle odznaki. */
+fun statusTextColor(status: DoseStatus, colors: ColorScheme): Color = when (status) {
+    // Success jest ciemna (dobrana do jasnej odznaki); na ciemnej karcie potrzebna jasna zieleń
+    DoseStatus.Taken -> if (colors.surface.luminance() < 0.5f) SuccessOnDark else Success
+    DoseStatus.Snoozed -> colors.primary
+    DoseStatus.Pending, DoseStatus.Skipped -> colors.onSurfaceVariant
+}
+
+/** Stan dawki dla czytnika ekranu (stateDescription), bo na karcie widać go głównie kolorem i ikoną. */
+fun doseStateDescription(status: DoseStatus): String = when (status) {
+    DoseStatus.Pending -> "oczekuje"
+    DoseStatus.Taken -> "przyjęta"
+    DoseStatus.Skipped -> "pominięta"
+    DoseStatus.Snoozed -> "odroczona"
+}
+
+/** Poziom zapasu słowami; kolor wskaźnika nie może być jedyną informacją. */
+fun stockLevelDescription(level: StockLevel): String? = when (level) {
+    StockLevel.Normal -> null
+    StockLevel.Low -> "Niski zapas"
+    StockLevel.Empty -> "Brak zapasu"
+}
+
 @Composable
 fun AppChip(
     text: String,
@@ -68,7 +111,7 @@ fun AppChip(
 ) {
     Row(
         modifier = modifier
-            .height(36.dp)
+            .heightIn(min = 36.dp)
             .clip(CircleShape)
             .background(containerColor)
             .padding(horizontal = 12.dp),
@@ -100,11 +143,18 @@ fun StockIndicator(
     modifier: Modifier = Modifier,
     designIcons: Boolean = false,
 ) {
-    val color = when (level) {
-        StockLevel.Normal -> MaterialTheme.colorScheme.primary
-        StockLevel.Low -> Warning
-        StockLevel.Empty -> MaterialTheme.colorScheme.error
-    }
+    val motion = AppMotion.current
+    val color by animateColorAsState(
+        when (level) {
+            StockLevel.Normal -> MaterialTheme.colorScheme.primary
+            StockLevel.Low -> Warning
+            StockLevel.Empty -> MaterialTheme.colorScheme.error
+        },
+        motion.spec(),
+        label = "kolorZapasu",
+    )
+    // pasek dojeżdża do nowej wartości (np. po uzupełnieniu zapasu)
+    val fill by animateFloatAsState(progress.coerceIn(0f, 1f), motion.spec(MotionDuration.Long, MotionEasing.Emphasized), label = "pasekZapasu")
     val textColor = if (designIcons) color else if (level == StockLevel.Normal) MaterialTheme.colorScheme.onSurface else color
     val icon = when (level) {
         StockLevel.Normal -> Icons.Outlined.Inventory2
@@ -114,19 +164,24 @@ fun StockIndicator(
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (designIcons && level == StockLevel.Normal) DesignIcon(R.raw.design_box_20, 20.dp)
-            else Icon(icon, contentDescription = null, tint = textColor, modifier = Modifier.size(20.dp))
+            else Icon(icon, contentDescription = stockLevelDescription(level), tint = textColor, modifier = Modifier.size(20.dp))
             Text(text, style = MaterialTheme.typography.bodyLarge, color = textColor)
         }
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(if (designIcons) 6.dp else 8.dp)
+                // pasek jako postęp poza kartą; w klikalnej karcie leku te właściwości nie są scalane, tam wystarcza tekst zapasu
+                .semantics {
+                    progressBarRangeInfo = ProgressBarRangeInfo(progress.coerceIn(0f, 1f), 0f..1f)
+                    stateDescription = "Zapas: ${(progress.coerceIn(0f, 1f) * 100).toInt()}%"
+                }
                 .clip(CircleShape)
                 .background(Line),
         ) {
             Box(
                 Modifier
-                    .fillMaxWidth(progress.coerceIn(0f, 1f))
+                    .fillMaxWidth(fill)
                     .height(if (designIcons) 6.dp else 8.dp)
                     .clip(CircleShape)
                     .background(color),
@@ -138,23 +193,48 @@ fun StockIndicator(
     }
 }
 
+/** Kolory komunikatu: tło, tytuł z ikoną i treść. */
+data class AlertColors(val container: Color, val content: Color, val message: Color)
+
+// Tła ostrzeżenia, błędu i sukcesu są jasne w obu motywach, więc tekst na nich też jest stały i ciemny
+// (wcześniej treść brała onSurface, które w ciemnym motywie jest jasne, i była nieczytelna).
+fun alertColors(tone: AlertTone, colors: ColorScheme): AlertColors = when (tone) {
+    AlertTone.Info -> AlertColors(colors.primaryContainer, colors.primary, colors.onSurface)
+    AlertTone.Warning -> AlertColors(WarningContainer, Warning, TextColor)
+    AlertTone.Error -> AlertColors(ErrorContainer, Error, TextColor)
+    AlertTone.Success -> AlertColors(SuccessContainer, Success, TextColor)
+}
+
 @Composable
 fun AppAlert(title: String, message: String?, tone: AlertTone, modifier: Modifier = Modifier, designIcons: Boolean = false) {
-    val colors = MaterialTheme.colorScheme
-    val (container, content, icon) = when (tone) {
-        AlertTone.Info -> Triple(colors.primaryContainer, colors.primary, Icons.Outlined.Info)
-        AlertTone.Warning -> Triple(WarningContainer, Warning, Icons.Outlined.WarningAmber)
-        AlertTone.Error -> Triple(ErrorContainer, colors.error, Icons.Outlined.ErrorOutline)
-        AlertTone.Success -> Triple(SuccessContainer, Success, Icons.Outlined.CheckCircle)
+    val (container, content, messageColor) = alertColors(tone, MaterialTheme.colorScheme)
+    val icon = when (tone) {
+        AlertTone.Info -> Icons.Outlined.Info
+        AlertTone.Warning -> Icons.Outlined.WarningAmber
+        AlertTone.Error -> Icons.Outlined.ErrorOutline
+        AlertTone.Success -> Icons.Outlined.CheckCircle
     }
-    Surface(modifier = modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = container) {
+    // Komunikat jest jednym węzłem TalkBack i regionem na żywo: pojawienie się lub zmiana treści zostanie odczytana
+    // (błąd natychmiast, reszta po bieżącej wypowiedzi). Ikona nazywa ton, który inaczej widać tylko kolorem.
+    val toneDescription = when (tone) {
+        AlertTone.Warning -> "Ostrzeżenie"
+        AlertTone.Error -> "Błąd"
+        AlertTone.Info, AlertTone.Success -> null
+    }
+    Surface(
+        modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) {
+            liveRegion = if (tone == AlertTone.Error) LiveRegionMode.Assertive else LiveRegionMode.Polite
+        },
+        shape = MaterialTheme.shapes.medium,
+        color = container,
+    ) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (designIcons && tone == AlertTone.Info) DesignIcon(R.raw.design_info_24, 24.dp)
-            else Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(24.dp))
+            else Icon(icon, contentDescription = toneDescription, tint = content, modifier = Modifier.size(24.dp))
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.labelLarge, color = content)
                 if (message != null) {
-                    Text(message, style = MaterialTheme.typography.bodyMedium, color = if (designIcons) content else colors.onSurface)
+                    Text(message, style = MaterialTheme.typography.bodyMedium, color = if (designIcons) content else messageColor)
                 }
             }
         }
@@ -195,7 +275,7 @@ fun EmptyState(
     ) {
         IconBadge(icon, size = 88.dp)
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.headlineMedium)
+            Text(title, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
             Text(message, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (actionText != null) PrimaryButton(actionText, onAction, Modifier.padding(top = 8.dp))

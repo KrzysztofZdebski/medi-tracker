@@ -64,6 +64,11 @@ fun renderTodayWidget(context: Context, state: TodayWidgetState): RemoteViews =
             R.id.widget_progress,
             if (state.total == 0) "Brak dawek" else "${state.taken} z ${state.total} przyjęte",
         )
+        // TalkBack: pełne zdanie zamiast skrótu z nagłówka widżetu
+        setContentDescription(
+            R.id.widget_progress,
+            if (state.total == 0) "Brak dawek na dziś" else "Przyjęto ${state.taken} z ${state.total} dzisiejszych dawek",
+        )
 
         val next = state.next
         setViewVisibility(R.id.widget_next, if (next == null) View.GONE else View.VISIBLE)
@@ -92,6 +97,8 @@ fun renderTodayWidget(context: Context, state: TodayWidgetState): RemoteViews =
         )
         setViewVisibility(R.id.widget_take, if (enoughStock) View.VISIBLE else View.GONE)
         if (enoughStock) {
+            // przycisk „Przyjęte” mówi czytnikowi ekranu, której dawki dotyczy
+            setContentDescription(R.id.widget_take, "Oznacz jako przyjętą: ${next.label}, ${next.dueTime.hhmm()}")
             val reminder = reminderFor(next, next.date.atTime(next.time))
             setOnClickPendingIntent(R.id.widget_take, ReminderReceiver.pendingAction(context, ReminderReceiver.ACTION_TAKE, reminder))
         }

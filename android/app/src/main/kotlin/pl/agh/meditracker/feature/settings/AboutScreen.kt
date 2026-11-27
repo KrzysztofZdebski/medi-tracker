@@ -9,6 +9,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -16,6 +18,7 @@ import pl.agh.meditracker.R
 import pl.agh.meditracker.core.MediTrackerApp
 import pl.agh.meditracker.data.catalog.CatalogSync
 import pl.agh.meditracker.ui.components.*
+import pl.agh.meditracker.ui.theme.MotionPresence
 import pl.agh.meditracker.feature.addmedication.Caption
 
 @Composable
@@ -58,7 +61,7 @@ fun AboutContent(version: String, syncing: Boolean, message: String?, onBack: ()
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             DesignBadge(R.raw.design_pill_44)
             Spacer(Modifier.height(24.dp))
-            Text("mediTracker", style = MaterialTheme.typography.headlineMedium, color = colors.onBackground)
+            Text("mediTracker", Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium, color = colors.onBackground)
             Text("Twój plan przyjmowania leków i zapas w jednym miejscu.", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
             SettingsCard {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -71,7 +74,7 @@ fun AboutContent(version: String, syncing: Boolean, message: String?, onBack: ()
             Caption(catalogDate?.let { "Stan danych: $it" } ?: "Katalog nie został jeszcze pobrany.")
             SecondaryButton("Otwórz źródło danych", onSource)
             PrimaryButton(if (syncing) "Aktualizowanie katalogu…" else "Aktualizuj katalog leków", onSync, enabled = !syncing, loading = syncing)
-            message?.let { AppAlert("Katalog leków", it, AlertTone.Info) }
+            MotionPresence(message) { AppAlert("Katalog leków", it, AlertTone.Info) }
         }
     }
 }

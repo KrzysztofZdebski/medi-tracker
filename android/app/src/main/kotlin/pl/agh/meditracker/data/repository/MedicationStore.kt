@@ -26,7 +26,11 @@ interface MedicationStore {
     // sam lek, bez harmonogramu (ten ma osobne wersje)
     fun saveMedication(medication: Medication)
 
-    fun archiveMedication(id: String, at: LocalDateTime)
+    // miękkie usunięcie: wiersze zostają z archived_at, bo odwołuje się do nich historia
+    fun archiveMedications(ids: List<String>, at: LocalDateTime)
+
+    // cofnięcie usunięcia: czyści archived_at
+    fun unarchiveMedications(ids: List<String>)
 
     fun saveSchedule(medicationId: String, version: Int, validFrom: LocalDateTime, schedule: Schedule)
 

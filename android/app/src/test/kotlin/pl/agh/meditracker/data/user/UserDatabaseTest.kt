@@ -1,6 +1,8 @@
 package pl.agh.meditracker.data.user
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -90,6 +92,50 @@ class UserDatabaseTest {
         assertTrue(restored.history.value.isEmpty())
         assertEquals(30, restored.medications.value.single().stock)
         assertEquals(DoseStatus.Pending, restored.dosesFor(today).first().first().status)
+    }
+
+    @Test fun undoingRemovalClearsArchivedAtAndSurvivesRestart() = runBlocking {
+        val repo = MedicationRepository(clock, store)
+        val med = repo.add(metformina)
+        val other = repo.add(metformina.copy(name = "Apap"))
+        repo.setDoseStatus(med.id, today, morning, DoseStatus.Taken)
+        repo.awaitWrites()
+        var changes = 0
+        val counting = launch(Dispatchers.Unconfined) { repo.changes.collect { changes++ } }
+
+        repo.removeAll(listOf(med.id, other.id))
+        repo.awaitWrites()
+        assertTrue(reopen().medications.value.isEmpty())
+        assertEquals(listOf("2026-11-06T09:00", "2026-11-06T09:00"), db.dao().allMedications().map { it.archivedAt })
+
+        repo.restoreAll(listOf(med.id, other.id))
+        repo.awaitWrites()
+        counting.cancel()
+        // usunięcie i przywrócenie to po jednym sygnale dla kopii zapasowej
+        assertEquals(2, changes)
+        assertEquals(listOf(null, null), db.dao().allMedications().map { it.archivedAt })
+        val restored = reopen()
+        assertEquals(repo.medications.value, restored.medications.value)
+        assertEquals(29, restored.medications.value.first().stock)
+        assertEquals(repo.dosesFor(today).first(), restored.dosesFor(today).first())
+        assertEquals(repo.history.value, restored.history.value)
+    }
+
+    @Test fun daoArchivesAndUnarchivesSeveralMedications() = runBlocking {
+        val repo = MedicationRepository(clock, store)
+        val a = repo.add(metformina)
+        val b = repo.add(metformina.copy(name = "Apap"))
+        val c = repo.add(metformina.copy(name = "Ibuprom"))
+        repo.awaitWrites()
+        val dao = db.dao()
+
+        dao.archiveMedications(listOf(a.id, c.id), "2026-11-06T09:00")
+        assertEquals(listOf("Apap"), dao.medications().map { it.medication.name })
+        dao.unarchiveMedications(listOf(c.id))
+        assertEquals(listOf("Apap", "Ibuprom"), dao.medications().map { it.medication.name })
+        // archiwizacja zachowuje wiersze (historia może się do nich odwoływać)
+        assertEquals(3, dao.allMedications().size)
+        assertEquals(setOf(a.id, b.id, c.id), dao.allMedications().map { it.medication.id }.toSet())
     }
 
     @Test fun appContainerReadsUserDbAfterRestart() = runBlocking {

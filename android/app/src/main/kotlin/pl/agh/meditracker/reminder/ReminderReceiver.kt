@@ -134,5 +134,7 @@ class RescheduleReceiver : BroadcastReceiver() {
         container.reminders.refresh()
         // po zmianie czasu lub strefy mógł się zmienić dzień pokazywany w widżecie
         container.widgets.update()
+        // wydarzenia kalendarza mają strefę telefonu, więc po jej zmianie powstają od nowa
+        if (intent.action == Intent.ACTION_TIMEZONE_CHANGED) container.calendar.refresh()
     }
 }

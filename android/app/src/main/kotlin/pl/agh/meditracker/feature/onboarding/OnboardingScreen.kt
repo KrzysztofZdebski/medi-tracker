@@ -19,6 +19,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -82,7 +84,7 @@ internal fun OnboardingLayout(
         ) {
             Spacer(Modifier.height(32.dp))
             IconBadge(icon, Modifier.clip(MaterialTheme.shapes.large), size = 88.dp)
-            Text(headline, style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.onSurface)
+            Text(headline, Modifier.semantics { heading() }, style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.onSurface)
             Text(body, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             content()
         }

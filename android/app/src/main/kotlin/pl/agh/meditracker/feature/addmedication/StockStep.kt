@@ -10,6 +10,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import pl.agh.meditracker.ui.components.AppTextField
@@ -49,7 +51,7 @@ fun StockStep(state: AddMedicationUiState, viewModel: AddMedicationViewModel) {
             border = BorderStroke(1.dp, colors.outlineVariant),
         ) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Sprawdź swój plan", style = typography.titleLarge)
+                Text("Sprawdź swój plan", Modifier.semantics { heading() }, style = typography.titleLarge)
                 Text("${state.name} ${state.strength}", style = typography.titleMedium)
                 Text(
                     "${state.unit.format(state.doseQty)} · ${formatDays(state.days)}",
